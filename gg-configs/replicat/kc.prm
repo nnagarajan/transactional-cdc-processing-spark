@@ -1,0 +1,9 @@
+REPLICAT kc
+-- Trail file for this example is located in "AdapterExamples/trail" directory
+-- Command to add REPLICAT
+-- add replicat conf, exttrail AdapterExamples/trail/tr NODBCHECKPOINT
+TARGETDB LIBFILE libggjava.so SET property=dirprm/kc.props
+REPORTCOUNT EVERY 15 SECONDS, RATE
+GROUPTRANSOPS 1000
+MAP ORCLPDB.APPUSER.*, TARGET APPUSER.*;
+

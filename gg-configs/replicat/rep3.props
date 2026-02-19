@@ -1,0 +1,35 @@
+gg.handlerlist=kafkahandler
+gg.handler.kafkahandler.type=kafka
+gg.handler.kafkahandler.kafkaProducerConfigFile=kp.properties
+#The following resolves the topic name using the short table name
+gg.handler.kafkahandler.topicMappingTemplate=dev.transaction_metadata_json
+#The following selects the message key using the concatenated primary keys
+#gg.handler.kafkahandler.keyMappingTemplate=${primaryKeys}
+#gg.handler.kafkahandler.schemaTopicName=mySchemaTopic
+#gg.handler.kafkahandler.format.pkUpdateHandling=update
+gg.handler.kafkahandler.blockingSend=false
+gg.handler.kafkahandler.includeTokens=false
+gg.handler.kafkahandler.mode=tx
+#gg.handler.kafkahandler.maxGroupSize=20
+#gg.handler.kafkahandler.metaHeadersTemplate=${alltokens}
+gg.handler.kafkahandler.transactionsEnabled=false
+#gg.handler.kafkahandler.format=json_row
+gg.handler.kafkahandler.format=com.technext.goldengate.dasource.formatter.TransactionBoundaryEventJsonFormatter
+#gg.handler.kafkahandler.format.metaColumnsTemplate=${objectname[table]},${optype[op_type]},${timestamp[op_ts]},${currenttimestamp[current_ts]},${position[pos]},${csn[csn]}
+#gg.handler.kafkahandler.format.metaColumnsTemplate=${objectname[table]},${csn[csn]},${xid[xid]}
+#Sample gg.classpath for Apache Kafka
+gg.classpath=dirprm/:/var/lib/kafka/libs/*:/opt/oracle/ggmabd/home/opt/DependencyDownloader/dependencies/kafka_3.3.2/*:/opt/oracle/ggbd/ggjava/resources/customlib/*
+#Sample gg.classpath for HDP
+#gg.classpath=/etc/kafka/conf:/usr/hdp/current/kafka-broker/libs/*
+
+
+#jvm.bootoptions=-Xmx64m -Xms64m -Dlog4j.configuration=log4j.properties
+
+javawriter.stats.full=TRUE
+javawriter.stats.display=TRUE
+
+###KAFKA Properties file ###
+gg.log=log4j
+gg.log.level=debug
+gg.report.time=30sec
+jvm.bootoptions=-Xms4g -Xmx6g

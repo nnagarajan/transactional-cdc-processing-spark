@@ -1,0 +1,24 @@
+gg.handlerlist=kafkaconnect
+#The handler properties
+gg.handler.kafkaconnect.type=kafkaconnect
+gg.handler.kafkaconnect.kafkaProducerConfigFile=kafkaconnect.properties
+gg.handler.kafkaconnect.mode=tx
+#The following selects the topic name based on the fully qualified table name
+gg.handler.kafkaconnect.topicMappingTemplate=dev.${toLowerCase[${fullyQualifiedTableName}]}.json
+#The following selects the message key using the concatenated primary keys
+gg.handler.kafkaconnect.keyMappingTemplate=${primaryKeys}
+#gg.handler.kafkaconnect.metaHeadersTemplate=${alltokens}
+gg.handler.kafkaconnect.transactionsEnabled=false
+#The formatter properties
+gg.handler.kafkaconnect.messageFormatting=op
+gg.handler.kafkaconnect.insertOpKey=I
+gg.handler.kafkaconnect.updateOpKey=U
+gg.handler.kafkaconnect.deleteOpKey=D
+gg.handler.kafkaconnect.truncateOpKey=T
+gg.handler.kafkaconnect.treatAllColumnsAsStrings=false
+gg.handler.kafkaconnect.pkUpdateHandling=abend
+gg.handler.kafkaconnect.metaColumnsTemplate=${objectname[table]},${optype[op_type]},${timestamp[op_ts]},${currenttimestamp[current_ts]},${position[pos]},${csn[csn]},${xid[xid]}
+#Apache Kafka Classpath
+#gg.classpath={Kafka install dir}/libs
+#Confluent IO classpath
+gg.classpath=/opt/confluent/confluent-7.3.0/share/java/kafka-serde-tools/*:/opt/confluent/confluent-7.3.0/share/java/kafka/*:/opt/confluent/confluent-7.3.0/share/java/confluent-common/*

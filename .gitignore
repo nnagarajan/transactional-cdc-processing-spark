@@ -1,0 +1,30 @@
+# Build
+target/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Maven wrapper
+.mvn/
+
+# OS
+.DS_Store
+
+# Derby
+derby.log
+metastore_db/
+
+# Spark / Delta
+spark-warehouse/
+*.crc
+
+#
+target/
+
+#
+.bloop
+
+#
+.metals

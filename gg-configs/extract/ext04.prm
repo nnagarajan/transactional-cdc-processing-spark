@@ -1,0 +1,11 @@
+EXTRACT ext04
+USERIDALIAS c##ggadmin 
+ddl include mapped
+exttrail /opt/oracle/gg/gg_home/dirdat/e4
+sourcecatalog orclpdb
+UPDATERECORDFORMAT FULL
+LOGALLSUPCOLS
+table appuser.ORDERS, KEYCOLS (ORDER_ID);
+table appuser.ORDER_DETAILS, KEYCOLS (ORDER_ID);
+table appuser.ORDER_LINE_ITEMS, KEYCOLS(LINE_ITEM_ID);
+table c##ggadmin.gg_heartbeat_seed, KEYCOLS(LOCAL_DATABASE,HEARTBEAT_TIMESTAMP);

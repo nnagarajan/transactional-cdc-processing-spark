@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Building Transactionally Consistent CDC Pipelines with Spark Structured Streaming and Delta Lake</title>
+</head>
+<body>
+
+<h1>Building Transactionally Consistent CDC Pipelines with Spark Structured Streaming and Delta Lake</h1>
+
+<h4>How to buffer, join, and materialize multi-table CDC events without losing transactional consistency — using flatMapGroupsWithState, RocksDB, and version-aware Delta MERGE.</h4>
+
+<h2>The Problem: CDC Events Arrive Out of Order and Across Topics</h2>
+
+<p>Change Data Capture (CDC) is a cornerstone of modern data architectures. Tools like Oracle GoldenGate, Debezium, and AWS DMS capture row-level changes from source databases and publish them as events. But there's a fundamental tension: <strong>relational databases commit transactions atomically, while CDC tools emit events one row at a time, often across separate topics.</strong></p>
+
+<p>Consider an e-commerce order system with three related tables:</p>
+
+<pre>orders (1) ──→ order_details (1:1) ──→ order_line_items (1:N)</pre>
+
+<p>When a customer places an order, a single database transaction inserts rows into all three tables. GoldenGate captures each insert as a separate CDC event and publishes them to separate Kafka topics. At the consumer, these events arrive independently — potentially out of order, across different partitions, at different times.</p>
+
+<p>If you naively process each event in isolation, you end up with partial records in your data lake: an order without its line items, line items without their parent order, or — worse — a half-committed transaction that was rolled back at the source.</p>
+
+<p><strong>The core challenge: How do you reconstruct transactional consistency in a streaming pipeline?</strong></p>
+
+<p>This article walks through a production-grade solution built with Spark 4.0 Structured Streaming, Delta Lake 4.0, and Oracle GoldenGate. The full source code is available on GitHub.</p>
+
+<h2>Architecture: A Two-Pipeline Design</h2>
+
+<p>The system is composed of two Spark Structured Streaming applications that form a pipeline chain:</p>
+
+<p><strong>Pipeline 1 — Transaction Buffering (TransactionalCdcProcessingApp)</strong> reads CDC events from four Kafka topics (one per source table plus a transaction metadata topic), parses the JSON payloads, unions them into a single stream, groups by transaction key (<code>xid:csn</code>), buffers events in RocksDB-backed state via <code>flatMapGroupsWithState</code>, and emits denormalized records to a Delta Lake SCD Type 2 table (<code>order_stream</code>) only when a transaction is complete.</p>
+
+<p><strong>Pipeline 2 — SCD Type 1 Merge (ScdType1MergeApp)</strong> reads from the <code>order_stream</code> Delta table as a stream, transforms and flattens the nested structure, and performs a version-aware Delta MERGE into a current-state table (<code>orders_current</code>) where each order appears exactly once with its latest values.</p>
+
+<figure>
+<img src="https://mermaid.ink/img/pako:eNqNVE1v2zAM_SuETi2QOOmSNkFPRbshi7F2GHZRdGBkOhYqS4Ikp82K_PdRkp046IddZPLx8ZGixD0thEJMceHh0xhN6HeCuVkX5H63IYpwNn2gmawBLbQ3wsnswUjwGpTNYatN6V4tBHjQ0u2LXBrjCT1oyB-9I89lIHjAO6K3FUBQqrwAL6kmhmuwONZCSXiULoCz_xHOCwLpEg2oP8MV3CjpHUGSIuoLYrSRhheogS3ywIY8d3XDKGejkMxNxME5LpEBGkDqrAWfEwJONIaJsDXa5HCYrZjGvQy5P3b1BDN8VJq1ZSZ3K4NuI2VgPqhq0evjVoL1adO_TqQJYlKEIgMWvWnlZwbK07Rq5S-jpoYj9oSMPYT2mI0y3UKFdKy0_dGJUVNn6K1VBxNuLH1P2LD8Kiz3uW18xdG12pWIp1HijE8wP7JZWjsAv93rZEJeGRKoUEi_DLWF7FMVZ_1o_Wz1_Hy6vdYlOBsqw3zzUhtiOd_VJdQVAJe1yQ3pnJR-8EH3vIapPOHYw3z3XnbCFLgfGP1WROzDpQ6lUjUdWOcE5mYMQ12T5RGSCDPi_Wh9NjLhJqFvR74bIGlMdQI5RYQhNuOIwsF3KHB8Z3H1Yp0V5hUYd-sM7y7tY9h28oT9TF0YZzqZFUlOJhjGkxOJ2O7_Lz2eh8PJ4MJ-P-eJL0R7PJjGKKaXU4SUbD4WR0ORwPZ5eD_ujiiP5imjY_04v-dDCbDS4G09F4OLycXQ56e_oP0PuTqQ" alt="Pipeline Architecture Diagram">
+<figcaption>Two-pipeline architecture: CDC events flow from Kafka through transaction-aware buffering into an SCD Type 2 Delta table, then into an SCD Type 1 current-state table via version-aware MERGE.</figcaption>
+</figure>
+
+<h2>Pipeline 1: Transaction-Aware Buffering</h2>
+
+<h3>The Key Insight: Transaction Metadata</h3>
+
+<p>Oracle GoldenGate (and similar tools) can emit a <strong>transaction metadata event</strong> alongside the CDC events. This metadata contains the transaction's <code>xid</code> (transaction ID), <code>csn</code> (commit sequence number), and — critically — the <strong>expected event count per table</strong>:</p>
+
+<pre><code>{
+  "xid": "1342848513.2.24.5354",
+  "csn": "334516829",
+  "tx_ts": "2026-02-17 10:15:30.000000",
+  "event_count": 6,
+  "data_collections": [
+    { "data_collection": "ORDERS",            "event_count": 1 },
+    { "data_collection": "ORDER_DETAILS",     "event_count": 1 },
+    { "data_collection": "ORDER_LINE_ITEMS",  "event_count": 4 }
+  ]
+}</code></pre>
+
+<p>This tells us: <em>"Transaction 1342848513.2.24.5354 touched 6 rows: 1 order, 1 order detail, and 4 line items. Don't emit anything until you have all 6."</em></p>
+
+<h3>Reading Four Kafka Topics</h3>
+
+<p>The application subscribes to four Kafka topics — one per source table plus the metadata topic:</p>
+
+<pre><code>val ordersRaw      = readKafkaStream(spark, config, "dev.appuser.orders.json")
+val detailsRaw     = readKafkaStream(spark, config, "dev.appuser.order_details.json")
+val lineItemsRaw   = readKafkaStream(spark, config, "dev.appuser.order_line_items.json")
+val txMetadataRaw  = readKafkaStream(spark, config, "dev.transaction_metadata_json")</code></pre>
+
+<p>Each stream is parsed from JSON into a structured schema, tagged with its event type (table name or <code>METADATA</code>), and then unioned into a single stream:</p>
+
+<pre><code>val allEvents = orderEvents
+  .union(orderDetailEvents)
+  .union(orderLineItemEvents)
+  .union(txMetadataEvents)
+  .filter(col("xid").isNotNull.and(col("csn").isNotNull))</code></pre>
+
+<h3>Stateful Processing with flatMapGroupsWithState</h3>
+
+<p>The unified stream is grouped by transaction key (<code>xid:csn</code>) and processed with <code>flatMapGroupsWithState</code> — Spark's most powerful stateful operator:</p>
+
+<pre><code>val joinedOrders: Dataset[OrderStream] = allEvents
+  .groupByKey(row =&gt;
+    row.getString(row.fieldIndex("xid")) + ":" +
+    row.getString(row.fieldIndex("csn")))
+  .flatMapGroupsWithState(
+    OutputMode.Append(),
+    GroupStateTimeout.NoTimeout()
+  )(processTransaction)</code></pre>
+
+<p>The <code>processTransaction</code> function implements a simple but effective state machine:</p>
+
+<pre><code>private def processTransaction(
+    txKey: String,
+    events: Iterator[Row],
+    state: GroupState[TransactionState]): Iterator[OrderStream] = {
+
+  val txState = if (state.exists) state.get else new TransactionState()
+
+  // Buffer events
+  while (events.hasNext) {
+    val row = events.next()
+    val eventType = row.getAs[String]("event_type")
+
+    if ("METADATA" == eventType) {
+      txState.setMetadata(/* parse metadata with expected counts */)
+    } else {
+      txState.addEvent(/* parse CDC event, route by table name */)
+    }
+  }
+
+  // Check completeness
+  if (txState.isComplete) {
+    val results = OrderJoiner.joinTransaction(txState)
+    state.remove()    // Clear state after emission
+    results.iterator
+  } else {
+    state.update(txState)
+    Iterator.empty     // Not ready yet — keep buffering
+  }
+}</code></pre>
+
+<h3>TransactionState: The Buffering Engine</h3>
+
+<p><code>TransactionState</code> is a <code>Serializable</code> class that tracks both the expected and received events:</p>
+
+<pre><code>class TransactionState extends Serializable {
+  var orderEvents: List[DataChangeEvent]         = new ArrayList()
+  var orderDetailEvents: List[DataChangeEvent]   = new ArrayList()
+  var orderLineItemEvents: List[DataChangeEvent] = new ArrayList()
+
+  private var _expectedOrderCount: Int = 0
+  private var _expectedOrderDetailCount: Int = 0
+  private var _expectedOrderLineItemCount: Int = 0
+
+  def addEvent(event: DataChangeEvent): Unit = event.tableName match {
+    case "ORDERS"           =&gt; orderEvents.add(event)
+    case "ORDER_DETAILS"    =&gt; orderDetailEvents.add(event)
+    case "ORDER_LINE_ITEMS" =&gt; orderLineItemEvents.add(event)
+  }
+
+  def isComplete: Boolean =
+    _metadata != null &amp;&amp;
+      orderEvents.size     &gt;= _expectedOrderCount &amp;&amp;
+      orderDetailEvents.size &gt;= _expectedOrderDetailCount &amp;&amp;
+      orderLineItemEvents.size &gt;= _expectedOrderLineItemCount
+}</code></pre>
+
+<p>This state is persisted in RocksDB via Spark's state store, surviving application restarts and failures. Events accumulate across micro-batches until the transaction is complete.</p>
+
+<h3>OrderJoiner: Denormalizing the Transaction</h3>
+
+<p>When <code>isComplete</code> returns true, <code>OrderJoiner.joinTransaction()</code> converts the buffered events into denormalized <code>OrderStream</code> records:</p>
+
+<pre><code>object OrderJoiner {
+  def joinTransaction(state: TransactionState): Seq[OrderStream] = {
+    val orderMap = HashMap[Double, OrderStream]()
+
+    // Process order events — build Order with before image
+    for (event &lt;- state.orderEvents) {
+      val order = convert(event.after, classOf[Order])
+      order.before = if (event.before != null)
+        convert(event.before, classOf[OrderBefore]) else null
+
+      val os = orderMap.getOrElseUpdate(
+        order.orderId,
+        newOrderStream(order.orderId, state))
+      os.orders.add(order)
+    }
+
+    // Process order details — same pattern
+    // Process line items — same pattern
+
+    orderMap.values.toSeq
+  }
+}</code></pre>
+
+<p>The CDC events use <code>Map[String, String]</code> for both <code>before</code> and <code>after</code> images. Jackson's <code>ObjectMapper.treeToValue()</code> coerces the string values to typed fields (e.g., <code>"100.50"</code> → <code>Double</code>). The <code>before</code> image is preserved for audit — it's <code>null</code> for inserts and populated for updates.</p>
+
+<h3>Output: SCD Type 2 Delta Table</h3>
+
+<p>The denormalized records are written to a Delta Lake table called <code>order_stream</code>:</p>
+
+<pre><code>joinedOrders.writeStream
+  .format("delta")
+  .option("checkpointLocation", checkpointLocation)
+  .outputMode(OutputMode.Append())
+  .toTable("order_stream")</code></pre>
+
+<p>Each record captures the full transaction context:</p>
+
+<pre><code>{
+  "xid": "1342848513.2.24.5354",
+  "csn": "334516829",
+  "orderId": 248.0,
+  "orders": [{
+    "orderId": 248.0, "orderRef": "ORD-001",
+    "version": 2.0, "orderStatus": "CONFIRMED",
+    "before": { "version": 1.0, "orderStatus": "PENDING" }
+  }],
+  "orderDetails": [{ "shippingMethod": "EXPRESS", "carrier": "FEDEX" }],
+  "lineItems": [
+    { "lineItemId": 1.0, "productId": "PROD-100", "itemQty": 600.0 },
+    { "lineItemId": 2.0, "productId": "PROD-200", "itemQty": 400.0 }
+  ]
+}</code></pre>
+
+<p>This is an SCD Type 2 representation — every transaction creates a new row, preserving full history with before images.</p>
+
+<h2>Pipeline 2: SCD Type 1 Merge with Entity-Level Versioning</h2>
+
+<p>The <code>order_stream</code> table is great for auditing and history, but operational dashboards need current state. That's <code>ScdType1MergeApp</code> — it reads the Type 2 stream and maintains a Type 1 table where each order appears exactly once with its latest values.</p>
+
+<h3>The Challenge: Independent Entity Versioning</h3>
+
+<p>A critical insight drives the merge logic: <strong>parent and child entities version independently.</strong> A transaction might update only line items without touching the order itself. The order stays at version 3 while its line items advance to version 5. The merge must handle this: update children without overwriting the parent, and vice versa.</p>
+
+<h3>Transform: Cross-Row Merging</h3>
+
+<p>Within a single micro-batch, multiple <code>order_stream</code> records can reference the same <code>orderId</code> — one from the order creation, another from a later line-item update. The transform step must combine them, not just pick one.</p>
+
+<pre><code>private def transformSourceBatch(batchDF: Dataset[Row]): Dataset[Row] = {
+  // Dedup within arrays (e.g., multiple versions of same line item)
+  val latestOrder      = dedupExpr("orders", "orderId")
+  val latestDetail     = dedupExpr("orderDetails", "orderId")
+  val dedupLineItems   = dedupExpr("lineItems", "lineItemId")
+
+  // Safely extract from potentially empty arrays
+  val safeOrder  = s"try_element_at($latestOrder, 1)"
+  val safeDetail = s"try_element_at($latestDetail, 1)"
+
+  val flattened = batchDF.selectExpr(
+    "orderId",
+    s"$safeOrder.version as version",
+    s"$safeOrder.orderStatus as orderStatus",
+    // ... flatten all order fields ...
+    s"$safeDetail as orderDetails",
+    s"$dedupLineItems as lineItems"
+  )
+
+  // Step 1: Best row for order-level fields (highest version)
+  val bestOrderRow = flattened
+    .withColumn("_rn", row_number().over(
+      Window.partitionBy("orderId")
+        .orderBy(col("version").desc_nulls_last)))
+    .filter("_rn = 1")
+    .drop("_rn", "orderDetails", "lineItems")
+
+  // Step 2: Best orderDetails (non-null, highest version)
+  val bestDetails = flattened
+    .filter("orderDetails IS NOT NULL")
+    .withColumn("_rn", row_number().over(
+      Window.partitionBy("orderId")
+        .orderBy(col("orderDetails.version").desc_nulls_last)))
+    .filter("_rn = 1")
+    .select("orderId", "orderDetails")
+
+  // Step 3: Merge lineItems from ALL rows, dedup by lineItemId
+  val mergedLineItems = flattened
+    .filter("lineItems IS NOT NULL AND size(lineItems) &gt; 0")
+    .groupBy("orderId")
+    .agg(flatten(collect_list(col("lineItems"))).as("_all"))
+    .selectExpr("orderId",
+      s"${dedupExpr("_all", "lineItemId")} as lineItems")
+
+  // Combine via left joins
+  bestOrderRow
+    .join(bestDetails, Seq("orderId"), "left")
+    .join(mergedLineItems, Seq("orderId"), "left")
+}</code></pre>
+
+<p>The <code>dedupExpr</code> helper uses Spark's higher-order array functions to keep only the highest-version element for each key:</p>
+
+<pre><code>private def dedupExpr(arrayField: String, keyField: String): String =
+  s"""filter($arrayField, e -&gt;
+       NOT exists($arrayField, other -&gt;
+         other.$keyField = e.$keyField AND other.version &gt; e.version))"""</code></pre>
+
+<h3>The Version-Aware Delta MERGE</h3>
+
+<p>The merge uses two <code>whenMatched</code> clauses evaluated in order — a pattern that elegantly separates parent updates from child-only updates:</p>
+
+<pre><code>val orderSourceWins =
+  "source.version IS NOT NULL AND source.version &gt; COALESCE(target.version, 0)"
+
+targetTable.alias("target")
+  .merge(transformed.alias("source"), "target.orderId = source.orderId")
+
+  // Clause 1: Source has a newer order version — update everything
+  .whenMatched(orderSourceWins)
+  .updateExpr(Map(
+    "orderRef"     -&gt; "source.orderRef",
+    "version"      -&gt; "source.version",
+    "orderStatus"  -&gt; "source.orderStatus",
+    // ... all order fields from source ...
+    "orderDetails" -&gt; mergedDetails,     // version-aware child merge
+    "lineItems"    -&gt; mergedLineItems    // version-aware child merge
+  ))
+
+  // Clause 2: No order update — preserve order fields, merge children only
+  .whenMatched()
+  .updateExpr(Map(
+    "orderDetails" -&gt; mergedDetails,
+    "lineItems"    -&gt; mergedLineItems
+  ))
+
+  // Only insert rows that have order data (prevents incomplete rows)
+  .whenNotMatched("source.version IS NOT NULL")
+  .insertAll()
+  .execute()</code></pre>
+
+<p>The child merge expressions handle the independent versioning.</p>
+
+<p><strong>For structs (1:1 relationships like orderDetails):</strong></p>
+
+<pre><code>private def mergeStructExpr(field: String): String =
+  s"""CASE
+     |  WHEN source.$field IS NULL THEN target.$field
+     |  WHEN target.$field IS NULL THEN source.$field
+     |  WHEN source.$field.version &gt; COALESCE(target.$field.version, 0)
+     |    THEN source.$field
+     |  ELSE target.$field
+     |END"""</code></pre>
+
+<p><strong>For arrays (1:N relationships like lineItems):</strong></p>
+
+<pre><code>private def mergeArrayExpr(arrayField: String, keyField: String): String =
+  s"""CASE
+     |  WHEN source.$arrayField IS NULL OR size(source.$arrayField) = 0
+     |    THEN target.$arrayField
+     |  WHEN target.$arrayField IS NULL OR size(target.$arrayField) = 0
+     |    THEN source.$arrayField
+     |  ELSE concat(
+     |    filter(source.$arrayField, se -&gt;
+     |      NOT exists(target.$arrayField, te -&gt;
+     |        te.$keyField = se.$keyField AND te.version &gt;= se.version)),
+     |    filter(target.$arrayField, te -&gt;
+     |      NOT exists(source.$arrayField, se -&gt;
+     |        se.$keyField = te.$keyField AND se.version &gt; te.version))
+     |  )
+     |END"""</code></pre>
+
+<p>This <code>concat + filter</code> pattern is key: it produces a merged array where each element has the highest version. Source elements replace target elements with the same key when the source version is higher; target elements are preserved when the source doesn't have a newer version.</p>
+
+<h2>The Source Schema: Oracle Tables with Version Triggers</h2>
+
+<p>The source database uses three tables related by <code>ORDER_ID</code>, with <code>VERSION</code> columns that auto-increment via triggers:</p>
+
+<pre><code>CREATE TABLE orders (
+  order_id    NUMBER(19,0) GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  order_ref   VARCHAR2(64) NOT NULL UNIQUE,
+  version     NUMBER(10,0) DEFAULT 1 NOT NULL,
+  order_date  DATE NOT NULL,
+  order_status VARCHAR2(16) NOT NULL,
+  total_amount NUMBER(20,4) NOT NULL,
+  -- ... more fields ...
+);
+
+CREATE TABLE order_line_items (
+  line_item_id NUMBER(19,0) GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  order_id     NUMBER(19,0) NOT NULL REFERENCES orders(order_id),
+  version      NUMBER(10,0) DEFAULT 1 NOT NULL,
+  product_id   VARCHAR2(64) NOT NULL,
+  item_qty     NUMBER(18,4) NOT NULL,
+  item_price   NUMBER(18,8),
+  -- ... more fields ...
+);
+
+-- Auto-increment version on update
+CREATE OR REPLACE TRIGGER trg_orders_version
+  BEFORE UPDATE ON orders FOR EACH ROW
+BEGIN
+  :NEW.version := :OLD.version + 1;
+END;
+/</code></pre>
+
+<p>The <code>VERSION</code> column serves dual purposes:</p>
+
+<ol>
+<li><strong>Optimistic locking</strong> at the application layer</li>
+<li><strong>Version-aware merging</strong> in the downstream pipeline</li>
+</ol>
+
+<h2>Lessons Learned: Pitfalls and Solutions</h2>
+
+<h3>1. Spark 4.0 ANSI Mode Breaks Array Access</h3>
+
+<p>Spark 4.0 enables ANSI mode by default. Accessing <code>array[0]</code> on an empty array throws <code>INVALID_ARRAY_INDEX</code> instead of returning <code>null</code>. When a transaction only updates line items (no order changes), the <code>orders</code> array is empty.</p>
+
+<p><strong>Fix:</strong> Use <code>try_element_at(array, 1)</code> (1-based index) which returns <code>null</code> for empty arrays:</p>
+
+<pre><code>// Before (throws in ANSI mode)
+s"$latestOrder[0].orderRef as orderRef"
+
+// After (null-safe)
+val safeOrder = s"try_element_at($latestOrder, 1)"
+s"$safeOrder.orderRef as orderRef"</code></pre>
+
+<h3>2. Cross-Row Dedup Silently Drops Child Updates</h3>
+
+<p>The original design used <code>row_number()</code> to pick one row per <code>orderId</code> (highest version). This works when each batch has one record per order. But when the batch contains both an order creation (version=1) and a subsequent line-item-only update (version=null), the dedup keeps the creation row and discards the line-item changes.</p>
+
+<p><strong>Fix:</strong> A three-step merge that combines data from all rows:</p>
+
+<ul>
+<li>Order fields: from the row with the highest version</li>
+<li>orderDetails: best non-null struct across all rows</li>
+<li>lineItems: <code>flatten(collect_list(...))</code> to merge arrays, then dedup</li>
+</ul>
+
+<h3>3. Table Existence Check: isDeltaTable vs catalog.tableExists</h3>
+
+<p><code>DeltaTable.isDeltaTable(spark, "orders_current")</code> can interpret the string as a file path rather than a table name, returning <code>false</code> even when the table exists in the Hive catalog. This causes the table to be recreated with <code>overwrite</code> on every batch.</p>
+
+<p><strong>Fix:</strong> Use the unambiguous <code>spark.catalog.tableExists(tableName)</code>:</p>
+
+<pre><code>// Before (may interpret as path)
+if (!DeltaTable.isDeltaTable(spark, targetTableName))
+
+// After (always resolves through catalog)
+if (!spark.catalog.tableExists(targetTableName))</code></pre>
+
+<h3>4. Java 17 Module System and Hive Metastore</h3>
+
+<p>Spark 4.0 with Hive support on Java 17 requires <code>--add-opens</code> JVM arguments. Without them, Hive's <code>StringInternUtils</code> fails with <code>InaccessibleObjectException</code>.</p>
+
+<p><strong>Fix:</strong> Create <code>.mvn/jvm.config</code> for builds, and add VM options to IDE run configurations:</p>
+
+<pre><code>--add-opens java.base/java.net=ALL-UNNAMED
+--add-opens java.base/java.util=ALL-UNNAMED
+--add-opens java.base/java.lang=ALL-UNNAMED
+--add-opens java.base/java.nio=ALL-UNNAMED</code></pre>
+
+<h3>5. Preventing Incomplete Row Insertions</h3>
+
+<p>A line-item-only transaction produces a row with <code>null</code> order fields. Without a guard, <code>whenNotMatched().insertAll()</code> inserts a row with null order fields and populated line items — an incomplete record.</p>
+
+<p><strong>Fix:</strong> Condition the insert on having order data:</p>
+
+<pre><code>// Before (inserts incomplete rows)
+.whenNotMatched().insertAll()
+
+// After (only inserts when order data is present)
+.whenNotMatched("source.version IS NOT NULL").insertAll()</code></pre>
+
+<h2>Why Not Flink?</h2>
+
+<p>This project is a Spark port of an existing Flink implementation. The two approaches differ in fundamental ways:</p>
+
+<p><strong>Transaction completion</strong> — Flink uses custom LSN-based watermarks; Spark uses event count matching from metadata.</p>
+
+<p><strong>State backend</strong> — Flink uses keyed state with RocksDB; Spark uses its state store with RocksDB.</p>
+
+<p><strong>API</strong> — Flink uses DataStream v2 custom operators; Spark uses Structured Streaming <code>flatMapGroupsWithState</code>.</p>
+
+<p><strong>Output</strong> — Flink writes to Kafka topics; Spark writes to Delta Lake tables.</p>
+
+<p><strong>SCD handling</strong> — Flink handles it downstream; Spark has a built-in dual pipeline.</p>
+
+<p>The Flink implementation uses watermarks derived from Log Sequence Numbers (LSN) to determine transaction boundaries — a more sophisticated approach that doesn't require explicit event counts. Spark's Structured Streaming doesn't support custom watermark advancement, so we rely on the metadata event's per-table counts instead.</p>
+
+<p>The trade-off: Spark's approach is simpler to implement and debug, but it requires the CDC tool to emit transaction metadata with accurate event counts. Flink's watermark approach is more resilient to metadata loss but requires custom operator implementation.</p>
+
+<h2>Production Considerations</h2>
+
+<h3>State Growth</h3>
+
+<p>The biggest operational risk is unbounded state growth. If a transaction's metadata event is lost (or arrives with incorrect counts), the transaction will buffer indefinitely. Monitor state store size and consider implementing:</p>
+
+<ul>
+<li><strong>TTL-based eviction</strong> for incomplete transactions</li>
+<li><strong>Alerting</strong> on transactions buffered longer than a threshold</li>
+<li><strong>Dead letter queue</strong> for expired transactions</li>
+</ul>
+
+<h3>Checkpointing</h3>
+
+<p>Both pipelines use checkpointing for exactly-once semantics. In production:</p>
+
+<ul>
+<li>Use HDFS or S3 for checkpoint storage (not local filesystem)</li>
+<li>Monitor checkpoint duration as a proxy for state store health</li>
+<li>Never delete checkpoints unless you're prepared to reprocess from scratch</li>
+</ul>
+
+<h3>Delta Lake Maintenance</h3>
+
+<p>The <code>order_stream</code> table grows append-only. Schedule regular maintenance:</p>
+
+<pre><code>-- Remove old file versions (default 7-day retention)
+VACUUM order_stream;
+
+-- Compact small files
+OPTIMIZE order_stream ZORDER BY (orderId);
+
+-- Update statistics for query planning
+ANALYZE TABLE order_stream COMPUTE STATISTICS FOR ALL COLUMNS;</code></pre>
+
+<h2>Conclusion</h2>
+
+<p>Transactional consistency in CDC pipelines is a solved problem — but the solution requires intentional design. The key ideas:</p>
+
+<ol>
+<li><strong>Buffer by transaction, not by table.</strong> Group events by transaction ID and only emit when the transaction is complete.</li>
+<li><strong>Version entities independently.</strong> Parent and child entities change at different rates. Track versions separately.</li>
+<li><strong>Use metadata for completeness checks.</strong> Transaction metadata tells you how many events to expect — use it as a termination condition.</li>
+<li><strong>Merge, don't overwrite.</strong> Delta MERGE with version-aware expressions preserves existing data while applying targeted updates.</li>
+<li><strong>Separate history from current state.</strong> SCD Type 2 for audit trails, SCD Type 1 for operational queries. Each has different access patterns and maintenance needs.</li>
+</ol>
+
+<p>The combination of Spark Structured Streaming's <code>flatMapGroupsWithState</code>, RocksDB-backed state persistence, and Delta Lake's ACID MERGE provides a robust foundation for transactionally consistent CDC processing at scale.</p>
+
+<p><em>Built with Spark 4.0, Delta Lake 4.0, Scala 2.13, and Oracle GoldenGate. The full source code is available on GitHub.</em></p>
+
+</body>
+</html>
