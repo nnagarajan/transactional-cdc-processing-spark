@@ -21,8 +21,16 @@ object CdcRows {
 
   def toSequencerInput(row: Row): SequencerInput =
     if (MetadataEventType == row.getAs[String]("event_type"))
-      MarkerInput(toMetadata(row), row.getAs[Int]("marker_partition"), row.getAs[Long]("marker_offset"))
+      MarkerInput(toMetadata(row), row.getAs[Int]("marker_partition"), row.getAs[Long]("marker_offset"),
+        markerIndex(row))
     else DataInput(toDataChangeEvent(row))
+
+  /** Position of the marker within its Kafka message; 0 when the row has no `marker_index`. */
+  private def markerIndex(row: Row): Int = {
+    if (!row.schema.fieldNames.contains("marker_index")) return 0
+    val i = row.fieldIndex("marker_index")
+    if (row.isNullAt(i)) 0 else row.getInt(i)
+  }
 
   /** Transaction metadata event: expected per-table counts. */
   def toMetadata(row: Row): TransactionMetadata = {

@@ -256,6 +256,11 @@ Ordering and completeness depend on the source configuration in `gg-configs/`
 | `blockingSend=true` | `rep3.props` | Markers are published synchronously, in commit order |
 | `acks=all`, `enable.idempotence=true` | `kp.properties` | No lost or reordered markers on retry |
 | 1 partition | `dev.transaction_metadata_json` | Kafka keeps order within a partition only |
+| `TransactionBoundaryEventJsonFormatter` from `gg-formatter/` | `rep3.props` | One marker per source transaction even with `GROUPTRANSOPS 1000`. A grouped delivery is one message holding a JSON array of markers, queued by `(offset, index)` |
+
+The marker contract is tested on both sides: the formatter's output in
+[gg-formatter](gg-formatter/README.md), and its parsing and ordering in `CdcJsonParsingTest` and
+`TransactionSequencerTest`.
 
 ## Key Features
 

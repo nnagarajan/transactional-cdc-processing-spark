@@ -55,6 +55,7 @@ State: `MapState` buffers, `MapState` queue (sequence number → `xid:csn`), `Va
 | `TransactionOrderingProcessor` | `StatefulProcessor` adapter; `orderTransactions()` wires `transformWithState` (classic Spark only) |
 | `TransactionSequencer` | Pure sequencing logic: accept/drop rules, emission walk, blocked tracking |
 | `CdcRows` | Converts union rows into `DataChangeEvent` / `TransactionMetadata` / sequencer inputs |
+| `CdcJsonParsing` | Parses the GoldenGate JSON topics; a metadata message may hold one marker object or an array of markers (kept with Kafka offset and index) |
 | `ScdType1MergeApp` | Scala object; streams the SCD Type 2 Delta table into `ScdType1Merger` |
 | `ScdType1Merger` | Version-aware Delta MERGE; CSN-guarded transaction context; child-only rows become placeholders |
 | `TransactionState` | Serializable state class buffering events per transaction; dedups on `pos`; exact expected vs. received counts |
@@ -102,5 +103,6 @@ spark-submit \
 - Transaction assembly runs as a single task (one global key), so it does not scale out
 - Data events whose marker never arrives stay buffered indefinitely (no TTL); they cannot block output, but they consume state
 - The metadata topic must have exactly one partition, and markers must arrive in commit (CSN-nondecreasing) order; a marker below the last emitted CSN is dropped with a WARN
+- Markers come from the `gg-formatter/` formatter (one marker per source transaction; a `GROUPTRANSOPS`-grouped delivery is one message holding a JSON array of markers, queued by `(offset, index)`). That module builds only where GoldenGate's jars exist (`/opt/oracle/ggbd/ggjava/resources/lib`) and is not part of the main Maven build
 - The state layout is incompatible with pre-ordering checkpoints; upgrading requires a new checkpoint location
 - No watermark advancement (unlike the Flink implementation)

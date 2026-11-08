@@ -18,8 +18,13 @@ import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, Transactio
 /** One input row for the sequencer. */
 sealed trait SequencerInput
 
-/** A transaction marker read from the metadata topic at the given Kafka partition and offset. */
-final case class MarkerInput(metadata: TransactionMetadata, partition: Int, offset: Long) extends SequencerInput
+/**
+ * A transaction marker read from the metadata topic at the given Kafka partition and offset.
+ * `index` is the marker's position within its Kafka message: one message carries several markers,
+ * in commit order, when GoldenGate's GROUPTRANSOPS delivered several source transactions together.
+ */
+final case class MarkerInput(metadata: TransactionMetadata, partition: Int, offset: Long, index: Int = 0)
+  extends SequencerInput
 
 /** A CDC data event from one of the table topics. */
 final case class DataInput(event: DataChangeEvent) extends SequencerInput
@@ -64,8 +69,9 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     }
 
     // Kafka delivers one partition in offset order, but rows reach this task through a shuffle;
-    // sort so queue order never depends on shuffle delivery order.
-    markers.sortBy(_.offset).foreach(acceptMarker(cursor, _))
+    // sort so queue order never depends on shuffle delivery order. Markers sharing a message
+    // (GROUPTRANSOPS grouping) keep their order within it.
+    markers.sortBy(m => (m.offset, m.index)).foreach(acceptMarker(cursor, _))
 
     val emitted = emitReady(cursor)
     val alert = trackBlocked(cursor, emitted.nonEmpty)

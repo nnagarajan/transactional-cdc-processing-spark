@@ -45,6 +45,26 @@ class TransactionSequencerTest {
   }
 
   @Test
+  def markersSharingAMessageKeepTheirOrderWithinIt(): Unit = {
+    // GROUPTRANSOPS: one Kafka message (offset 5) carries three markers in commit order,
+    // between single-marker messages at offsets 4 and 6. Rows arrive shuffled.
+    def at(xid: String, csn: String, offset: Long, index: Int) =
+      MarkerInput(marker(xid, csn, lineItems = 1), 0, offset, index)
+    val r1 = run(
+      at("g3", "700", 5, 2), at("after", "800", 6, 0), at("g1", "500", 5, 0),
+      at("before", "400", 4, 0), at("g2", "600", 5, 1))
+
+    assertThat(r1.emitted.toArray).isEmpty()
+
+    // Complete them in reverse order: nothing is emitted until the head ("before") completes.
+    val r2 = run(li("after", "800", "p8"), li("g3", "700", "p7"), li("g2", "600", "p6"), li("g1", "500", "p5"))
+    assertThat(r2.emitted.toArray).isEmpty()
+
+    val r3 = run(li("before", "400", "p4"))
+    assertThat(keys(r3).toArray).containsExactly("before:400", "g1:500", "g2:600", "g3:700", "after:800")
+  }
+
+  @Test
   def duplicateMarkerWhileBufferedIsIgnored(): Unit = {
     run(mk("a", "100", 2), li("a", "100", "p1"))
     run(mk("a", "100", 2))

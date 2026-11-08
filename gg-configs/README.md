@@ -45,6 +45,11 @@ The Spark pipeline emits transactions in the order their markers appear on
   does not. Deletes never reach the trail, so the `kc` data topics and the `rep3` marker
   counts always see the same operations. Filtering at only one replicat would make
   marker counts disagree with the data, and transactions would complete too early or never.
+- `rep3` uses the formatter from [`gg-formatter/`](../gg-formatter/README.md), which emits
+  **exactly one marker per source transaction**, even when `GROUPTRANSOPS` groups several
+  source transactions into one delivery. A grouped delivery becomes one Kafka message holding a
+  JSON array of markers. Deploy that build to `customlib/`; the earlier formatter merged grouped
+  transactions into one marker with wrong counts.
 
 Create the topic:
 
