@@ -254,5 +254,7 @@ Tested with Spark 4.1.1 on a copy of `/tmp/spark-checkpoints-ordered`:
 - reading `cursor` and `buffers` through `format("statestore")`
 - the `buffers` schema
 
-The field-level SQL queries above follow that schema but weren't run against a checkpoint with a
-blocked transaction.
+- every SQL statement in this document
+
+The SQL ran against a checkpoint with an empty queue and empty buffers. The column references
+are verified, but the queue, buffers and blocking queries haven't been seen returning rows.
