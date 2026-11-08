@@ -35,11 +35,15 @@
     <java.version>17</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <scala.version>2.13.16</scala.version>
+    <scala.version>2.13.17</scala.version>
     <spark.scala.version>2.13</spark.scala.version>
-    <spark.version>4.0.0</spark.version>
-    <delta.version>4.0.0</delta.version>
-    <jackson.version>2.18.2</jackson.version>
+    <spark.version>4.1.1</spark.version>
+    <!-- Spark minor version, used in the Spark-specific Delta and Unity Catalog artifact names -->
+    <spark.binary.version>4.1</spark.binary.version>
+    <delta.version>4.2.0</delta.version>
+    <!-- Unity Catalog Spark connector release built against Delta 4.2.0 -->
+    <unitycatalog.version>0.5.0</unitycatalog.version>
+    <jackson.version>2.20.0</jackson.version>
   </properties>
 
   <dependencyManagement>
@@ -97,7 +101,7 @@
     </dependency>
     <dependency>
       <groupId>io.delta</groupId>
-      <artifactId>delta-spark_${spark.scala.version}</artifactId>
+      <artifactId>delta-spark_${spark.binary.version}_${spark.scala.version}</artifactId>
       <version>${delta.version}</version>
     </dependency>
     <dependency>
@@ -125,24 +129,9 @@
     </dependency>
 
     <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-hive_${spark.scala.version}</artifactId>
-      <version>${spark.version}</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.derby</groupId>
-      <artifactId>derbyclient</artifactId>
-      <version>10.16.1.1</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.derby</groupId>
-      <artifactId>derbynet</artifactId>
-      <version>10.16.1.1</version>
-      <scope>provided</scope>
+      <groupId>io.unitycatalog</groupId>
+      <artifactId>unitycatalog-spark_${spark.binary.version}_${spark.scala.version}</artifactId>
+      <version>${unitycatalog.version}</version>
     </dependency>
 
   </dependencies>

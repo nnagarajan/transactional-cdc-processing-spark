@@ -20,7 +20,7 @@ mvn clean package
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0,io.delta:delta-spark_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
@@ -121,7 +121,7 @@ To query the Delta Lake output table:
 
 ```bash
 spark-sql \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   -f db/query_table.sql

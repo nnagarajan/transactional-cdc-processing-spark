@@ -3,10 +3,10 @@
 -- orderDetails is a single struct (1:1), lineItems is an array (1:N).
 
 -- Drop table if exists (for recreation)
-DROP TABLE IF EXISTS default.orders_current;
+DROP TABLE IF EXISTS {{CATALOG_SCHEMA}}.orders_current;
 
 -- Create SCD Type 1 table with flattened order attributes
-CREATE TABLE IF NOT EXISTS default.orders_current (
+CREATE TABLE IF NOT EXISTS {{CATALOG_SCHEMA}}.orders_current (
     -- Transaction identifiers (from last update)
     xid STRING COMMENT 'Oracle transaction ID from last update',
     csn STRING COMMENT 'Oracle commit sequence number from last update',
@@ -88,24 +88,10 @@ CREATE TABLE IF NOT EXISTS default.orders_current (
         >
     >> COMMENT 'Array of current order line items (each at its latest version)'
 )
-USING DELTA;
+USING DELTA
+TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported');
 
--- Create a simple current view
-CREATE OR REPLACE VIEW default.orders_current_view AS
-SELECT
-    orderId,
-    orderRef,
-    orderStatus,
-    totalAmount,
-    currency,
-    orderDate,
-    version as orderVersion,
-    dwhProcessedTs,
-    orderDetails.shippingMethod,
-    orderDetails.carrier,
-    orderDetails.deliveryStatus,
-    size(lineItems) as line_item_count
-FROM orders_current;
+-- Views are in db/views.sql: the Unity Catalog Spark connector (0.4.0) doesn't support views.
 
 -- Show table description
-DESCRIBE EXTENDED default.orders_current;
+DESCRIBE EXTENDED {{CATALOG_SCHEMA}}.orders_current;

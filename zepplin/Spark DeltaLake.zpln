@@ -1,0 +1,289 @@
+{
+  "paragraphs": [
+    {
+      "text": "%sh\n# restart SparkContext\ncurl -X PUT http://localhost:8686/api/interpreter/setting/restart/spark\n# 8686 is the zeppelin port@ar@",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:58:43.804",
+      "progress": 0,
+      "config": {
+        "colWidth": 12.0,
+        "fontSize": 9.0,
+        "results": {},
+        "enabled": true,
+        "editorSetting": {
+          "language": "sh",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "editorMode": "ace/mode/sh",
+        "tableHide": false
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0\r  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0\r  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0{\r\"status\":\"OK\",\"message\":\"\",\"body\":{\"id1\":\"spark\",\"name\":\"spark\",\"group\":\"sp0a0r k 4947  100  4947  \"  0 , \" p r o0p erties\":{\"SPARK_HOME\": {\"name\":\" S1PARK_HOME\",\"value\":\"/o9p3t6/   s p a r0k / s0p:a0rk-4.1.1\",\"type\":\"string\"},\"spark.master\":{\"name\":\"spark.ma0ster\",\"value:\"0:2\" l o0c:a0l0[:*0]2\" ,-\"-t:y-p-e:\"-:-  1936\n\"string\"},\"spark.submit.deployMode\":{\"name\":\"spark.submit.deployMode\",\"value\":\"\",\"type\":\"string\"},\"spark.app.name\":{\"name\":\"spark.app.name\",\"value\":\"\",\"type\":\"string\"},\"spark.driver.cores\":{\"name\":\"spark.driver.cores\",\"value\":\"1\",\"type\":\"number\"},\"spark.driver.memory\":{\"name\":\"spark.driver.memory\",\"value\":\"1g\",\"type\":\"string\"},\"spark.executor.cores\":{\"name\":\"spark.executor.cores\",\"value\":\"1\",\"type\":\"number\"},\"spark.executor.memory\":{\"name\":\"spark.executor.memory\",\"value\":\"1g\",\"type\":\"string\"},\"spark.executor.instances\":{\"name\":\"spark.executor.instances\",\"value\":\"2\",\"type\":\"number\"},\"spark.files\":{\"name\":\"spark.files\",\"value\":\"\",\"type\":\"string\"},\"spark.jars\":{\"name\":\"spark.jars\",\"value\":\"\",\"type\":\"string\"},\"spark.jars.packages\":{\"name\":\"spark.jars.packages\",\"value\":\"\",\"type\":\"string\"},\"zeppelin.spark.useHiveContext\":{\"name\":\"zeppelin.spark.useHiveContext\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.run.asLoginUser\":{\"name\":\"zeppelin.spark.run.asLoginUser\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.printREPLOutput\":{\"name\":\"zeppelin.spark.printREPLOutput\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.maxResult\":{\"name\":\"zeppelin.spark.maxResult\",\"value\":\"1000\",\"type\":\"number\"},\"zeppelin.spark.enableSupportedVersionCheck\":{\"name\":\"zeppelin.spark.enableSupportedVersionCheck\",\"value\":false,\"type\":\"checkbox\"},\"zeppelin.spark.uiWebUrl\":{\"name\":\"zeppelin.spark.uiWebUrl\",\"value\":\"\",\"type\":\"string\"},\"zeppelin.spark.ui.hidden\":{\"name\":\"zeppelin.spark.ui.hidden\",\"value\":false,\"type\":\"checkbox\"},\"spark.webui.yarn.useProxy\":{\"name\":\"spark.webui.yarn.useProxy\",\"value\":false,\"type\":\"checkbox\"},\"zeppelin.spark.scala.color\":{\"name\":\"zeppelin.spark.scala.color\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.deprecatedMsg.show\":{\"name\":\"zeppelin.spark.deprecatedMsg.show\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.concurrentSQL\":{\"name\":\"zeppelin.spark.concurrentSQL\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.concurrentSQL.max\":{\"name\":\"zeppelin.spark.concurrentSQL.max\",\"value\":\"10\",\"type\":\"number\"},\"zeppelin.spark.sql.stacktrace\":{\"name\":\"zeppelin.spark.sql.stacktrace\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.spark.sql.interpolation\":{\"name\":\"zeppelin.spark.sql.interpolation\",\"value\":false,\"type\":\"checkbox\"},\"PYSPARK_PYTHON\":{\"name\":\"PYSPARK_PYTHON\",\"value\":\"python3\",\"type\":\"string\"},\"PYSPARK_DRIVER_PYTHON\":{\"name\":\"PYSPARK_DRIVER_PYTHON\",\"value\":\"jupyter\",\"type\":\"string\"},\"zeppelin.pyspark.useIPython\":{\"name\":\"zeppelin.pyspark.useIPython\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.R.knitr\":{\"name\":\"zeppelin.R.knitr\",\"value\":true,\"type\":\"checkbox\"},\"zeppelin.R.cmd\":{\"name\":\"zeppelin.R.cmd\",\"value\":\"R\",\"type\":\"string\"},\"zeppelin.R.image.width\":{\"name\":\"zeppelin.R.image.width\",\"value\":\"100%\",\"type\":\"number\"},\"zeppelin.R.render.options\":{\"name\":\"zeppelin.R.render.options\",\"value\":\"out.format \\u003d \\u0027html\\u0027, comment \\u003d NA, echo \\u003d FALSE, results \\u003d \\u0027asis\\u0027, message \\u003d F, warning \\u003d F, fig.retina \\u003d 2\",\"type\":\"textarea\"},\"zeppelin.R.shiny.portRange\":{\"name\":\"zeppelin.R.shiny.portRange\",\"value\":\":\",\"type\":\"string\"}},\"status\":\"READY\",\"interpreterGroup\":[{\"name\":\"spark\",\"class\":\"org.apache.zeppelin.spark.SparkInterpreter\",\"defaultInterpreter\":true,\"editor\":{\"language\":\"scala\",\"editOnDblClick\":false,\"completionKey\":\"TAB\",\"completionSupport\":true}},{\"name\":\"sql\",\"class\":\"org.apache.zeppelin.spark.SparkSqlInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"sql\",\"editOnDblClick\":false,\"completionKey\":\"TAB\",\"completionSupport\":true}},{\"name\":\"pyspark\",\"class\":\"org.apache.zeppelin.spark.PySparkInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"python\",\"editOnDblClick\":false,\"completionKey\":\"TAB\",\"completionSupport\":true}},{\"name\":\"ipyspark\",\"class\":\"org.apache.zeppelin.spark.IPySparkInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"python\",\"editOnDblClick\":false,\"completionSupport\":true,\"completionKey\":\"TAB\"}},{\"name\":\"r\",\"class\":\"org.apache.zeppelin.spark.SparkRInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"r\",\"editOnDblClick\":false,\"completionSupport\":false,\"completionKey\":\"TAB\"}},{\"name\":\"ir\",\"class\":\"org.apache.zeppelin.spark.SparkIRInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"r\",\"editOnDblClick\":false,\"completionSupport\":true,\"completionKey\":\"TAB\"}},{\"name\":\"shiny\",\"class\":\"org.apache.zeppelin.spark.SparkShinyInterpreter\",\"defaultInterpreter\":false,\"editor\":{\"language\":\"r\",\"editOnDblClick\":false,\"completionSupport\":true,\"completionKey\":\"TAB\"}}],\"dependencies\":[],\"option\":{\"remote\":true,\"port\":-1,\"perNote\":\"shared\",\"perUser\":\"shared\",\"isExistingProcess\":false,\"setPermission\":false,\"owners\":[],\"isUserImpersonate\":false}}}"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1669445244742_1071783858",
+      "id": "paragraph_1669445244742_1071783858",
+      "dateCreated": "2022-11-26 01:47:24.742",
+      "dateStarted": "2026-02-19 00:58:43.806",
+      "dateFinished": "2026-02-19 00:58:46.370",
+      "status": "FINISHED"
+    },
+    {
+      "text": "%spark.conf\n\n# It is strongly recommended to set SPARK_HOME explicitly instead of using the embedded%sspark of Zeppelin. As the function of embedded spark of Zeppelin is limited and can only run in local mode.\nSPARK_HOME /opt/spark/spark-4.0.2\n\n#spark.driver.extraJavaOptions -Dhttp.proxyHost\u003d\u003c\u003e -Dhttp.proxyPort\u003d\u003c\u003e -Dhttps.proxyHost\u003d\u003c\u003e -Dhttps.proxyPort\u003d\u003c\u003e\n#To use spark 3.3.x you should disable zeppelin.spark.enableSupportedVersionCheck\u003dfalse in interpreter menu\n\nspark.jars.packages io.delta:delta-spark_2.13:4.0.1,org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.1\nspark.sql.extensions io.delta.sql.DeltaSparkSessionExtension\nspark.sql.catalog.spark_catalog org.apache.spark.sql.delta.catalog.DeltaCatalog\nspark.sql.warehouse.dir file:/tmp/warehouse/sql2\nspark.sql.catalogImplementation hive\nspark.executor.memory 12G\nspark.driver.memory 12G\nspark.driver.cores 4\nspark.hadoop.javax.jdo.option.ConnectionURL jdbc:derby:/tmp/warehouse/metastore_db1;create\u003dtrue\nspark.hadoop.javax.jdo.option.ConnectionDriverName org.apache.derby.jdbc.EmbeddedDriver",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:58:45.928",
+      "progress": 0,
+      "config": {
+        "colWidth": 12.0,
+        "fontSize": 9.0,
+        "results": {},
+        "enabled": true,
+        "editorSetting": {
+          "language": "text",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/text"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": []
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1669445206853_1006036366",
+      "id": "paragraph_1669445206853_1006036366",
+      "dateCreated": "2022-11-26 01:46:46.853",
+      "dateStarted": "2026-02-19 00:58:45.931",
+      "dateFinished": "2026-02-19 00:58:45.932",
+      "status": "FINISHED"
+    },
+    {
+      "text": "%spark\nspark.catalog.listTables().show()",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:58:49.322",
+      "progress": 0,
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12.0,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 9.0,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "ERROR",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "org.apache.spark.sql.AnalysisException: org.apache.hadoop.hive.ql.metadata.HiveException: java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient\n  at org.apache.spark.sql.hive.HiveExternalCatalog.withClient(HiveExternalCatalog.scala:119)\n  at org.apache.spark.sql.hive.HiveExternalCatalog.databaseExists(HiveExternalCatalog.scala:197)\n  at org.apache.spark.sql.internal.SharedState.externalCatalog$lzycompute(SharedState.scala:147)\n  at org.apache.spark.sql.internal.SharedState.externalCatalog(SharedState.scala:141)\n  at org.apache.spark.sql.hive.HiveSessionStateBuilder.externalCatalog(HiveSessionStateBuilder.scala:57)\n  at org.apache.spark.sql.hive.HiveSessionStateBuilder.$anonfun$catalog$1(HiveSessionStateBuilder.scala:72)\n  at org.apache.spark.sql.catalyst.catalog.SessionCatalog.externalCatalog$lzycompute(SessionCatalog.scala:129)\n  at org.apache.spark.sql.catalyst.catalog.SessionCatalog.externalCatalog(SessionCatalog.scala:129)\n  at org.apache.spark.sql.catalyst.catalog.SessionCatalog.databaseExists(SessionCatalog.scala:335)\n  at org.apache.spark.sql.classic.Catalog.resolveNamespace(Catalog.scala:470)\n  at org.apache.spark.sql.classic.Catalog.listTablesInternal(Catalog.scala:151)\n  at org.apache.spark.sql.classic.Catalog.listTables(Catalog.scala:135)\n  at org.apache.spark.sql.classic.Catalog.listTables(Catalog.scala:126)\n  ... 38 elided\nCaused by: org.apache.hadoop.hive.ql.metadata.HiveException: java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient\n  at org.apache.hadoop.hive.ql.metadata.Hive.getDatabase(Hive.java:1567)\n  at org.apache.hadoop.hive.ql.metadata.Hive.databaseExists(Hive.java:1552)\n  at org.apache.spark.sql.hive.client.Shim_v2_0.databaseExists(HiveShim.scala:919)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.$anonfun$databaseExists$1(HiveClientImpl.scala:409)\n  at scala.runtime.java8.JFunction0$mcZ$sp.apply(JFunction0$mcZ$sp.scala:17)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.$anonfun$withHiveState$1(HiveClientImpl.scala:294)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.liftedTree1$1(HiveClientImpl.scala:237)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.retryLocked(HiveClientImpl.scala:236)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.withHiveState(HiveClientImpl.scala:274)\n  at org.apache.spark.sql.hive.client.HiveClientImpl.databaseExists(HiveClientImpl.scala:409)\n  at org.apache.spark.sql.hive.HiveExternalCatalog.$anonfun$databaseExists$1(HiveExternalCatalog.scala:197)\n  at scala.runtime.java8.JFunction0$mcZ$sp.apply(JFunction0$mcZ$sp.scala:17)\n  at org.apache.spark.sql.hive.HiveExternalCatalog.withClient(HiveExternalCatalog.scala:105)\n  ... 50 more\nCaused by: java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient\n  at org.apache.hadoop.hive.metastore.MetaStoreUtils.newInstance(MetaStoreUtils.java:1742)\n  ... 7 elided and 62 more\nCaused by: java.lang.reflect.InvocationTargetException: org.apache.hadoop.hive.metastore.api.MetaException: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\n  at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)\n  at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)\n  at java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)\n  at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:500)\n  at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:481)\n  at org.apache.hadoop.hive.metastore.MetaStoreUtils.newInstance(MetaStoreUtils.java:1740)\n  ... 69 more\nCaused by: org.apache.hadoop.hive.metastore.api.MetaException: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\n  ... 5 elided and 75 more\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1674800668937_1912240111",
+      "id": "paragraph_1674800668937_1912240111",
+      "dateCreated": "2023-01-27 01:24:28.937",
+      "dateStarted": "2026-02-19 00:58:49.324",
+      "dateFinished": "2026-02-19 00:59:17.771",
+      "status": "ERROR"
+    },
+    {
+      "text": "%sql\nselect * from default.orders_current where orderId\u003d72",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:58:59.786",
+      "progress": 0,
+      "config": {
+        "colWidth": 12.0,
+        "fontSize": 9.0,
+        "enabled": true,
+        "results": {
+          "0": {
+            "graph": {
+              "mode": "table",
+              "height": 300.0,
+              "optionOpen": false,
+              "setting": {
+                "table": {
+                  "tableGridState": {},
+                  "tableColumnTypeState": {
+                    "names": {
+                      "xid": "string",
+                      "csn": "string",
+                      "dwhProcessedTs": "string",
+                      "orderId": "string",
+                      "orderRef": "string",
+                      "version": "string",
+                      "orderDate": "string",
+                      "orderTs": "string",
+                      "orderStatus": "string",
+                      "orderType": "string",
+                      "totalAmount": "string",
+                      "currency": "string",
+                      "customerId": "string",
+                      "shippingAddressId": "string",
+                      "createdTs": "string",
+                      "orderBefore": "string",
+                      "orderDetails": "string",
+                      "lineItems": "string"
+                    },
+                    "updated": false
+                  },
+                  "tableOptionSpecHash": "[{\"name\":\"useFilter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable filter for columns\"},{\"name\":\"showPagination\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable pagination for better navigation\"},{\"name\":\"showAggregationFooter\",\"valueType\":\"boolean\",\"defaultValue\":false,\"widget\":\"checkbox\",\"description\":\"Enable a footer for displaying aggregated values\"}]",
+                  "tableOptionValue": {
+                    "useFilter": false,
+                    "showPagination": false,
+                    "showAggregationFooter": false
+                  },
+                  "updated": false,
+                  "initialized": false
+                }
+              },
+              "commonSetting": {}
+            }
+          }
+        },
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "ERROR",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "\nError happens in sql: \nselect * from default.orders_current where orderId\u003d72\norg.apache.hadoop.hive.ql.metadata.HiveException: java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient\n\tat org.apache.hadoop.hive.ql.metadata.Hive.getDatabase(Hive.java:1567)\n\tat org.apache.hadoop.hive.ql.metadata.Hive.databaseExists(Hive.java:1552)\n\tat org.apache.spark.sql.hive.client.Shim_v2_0.databaseExists(HiveShim.scala:919)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.$anonfun$databaseExists$1(HiveClientImpl.scala:409)\n\tat scala.runtime.java8.JFunction0$mcZ$sp.apply(JFunction0$mcZ$sp.scala:17)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.$anonfun$withHiveState$1(HiveClientImpl.scala:294)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.liftedTree1$1(HiveClientImpl.scala:237)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.retryLocked(HiveClientImpl.scala:236)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.withHiveState(HiveClientImpl.scala:274)\n\tat org.apache.spark.sql.hive.client.HiveClientImpl.databaseExists(HiveClientImpl.scala:409)\n\tat org.apache.spark.sql.hive.HiveExternalCatalog.$anonfun$databaseExists$1(HiveExternalCatalog.scala:197)\n\tat scala.runtime.java8.JFunction0$mcZ$sp.apply(JFunction0$mcZ$sp.scala:17)\n\tat org.apache.spark.sql.hive.HiveExternalCatalog.withClient(HiveExternalCatalog.scala:105)\n\tat org.apache.spark.sql.hive.HiveExternalCatalog.databaseExists(HiveExternalCatalog.scala:197)\n\tat org.apache.spark.sql.internal.SharedState.externalCatalog$lzycompute(SharedState.scala:147)\n\tat org.apache.spark.sql.internal.SharedState.externalCatalog(SharedState.scala:141)\n\tat org.apache.spark.sql.hive.HiveSessionStateBuilder.externalCatalog(HiveSessionStateBuilder.scala:57)\n\tat org.apache.spark.sql.hive.HiveSessionStateBuilder.$anonfun$catalog$1(HiveSessionStateBuilder.scala:72)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.externalCatalog$lzycompute(SessionCatalog.scala:129)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.externalCatalog(SessionCatalog.scala:129)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.databaseExists(SessionCatalog.scala:335)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.requireDbExists(SessionCatalog.scala:264)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.getTableRawMetadata(SessionCatalog.scala:564)\n\tat org.apache.spark.sql.catalyst.catalog.SessionCatalog.getTableMetadata(SessionCatalog.scala:550)\n\tat org.apache.spark.sql.execution.datasources.v2.V2SessionCatalog.loadTable(V2SessionCatalog.scala:91)\n\tat org.apache.spark.sql.connector.catalog.DelegatingCatalogExtension.loadTable(DelegatingCatalogExtension.java:73)\n\tat org.apache.spark.sql.delta.catalog.DeltaCatalog.super$loadTable(DeltaCatalog.scala:233)\n\tat org.apache.spark.sql.delta.catalog.DeltaCatalog.$anonfun$loadTable$1(DeltaCatalog.scala:233)\n\tat org.apache.spark.sql.delta.metering.DeltaLogging.recordFrameProfile(DeltaLogging.scala:171)\n\tat org.apache.spark.sql.delta.metering.DeltaLogging.recordFrameProfile$(DeltaLogging.scala:169)\n\tat org.apache.spark.sql.delta.catalog.DeltaCatalog.recordFrameProfile(DeltaCatalog.scala:70)\n\tat org.apache.spark.sql.delta.catalog.DeltaCatalog.loadTable(DeltaCatalog.scala:232)\n\tat org.apache.spark.sql.connector.catalog.CatalogV2Util$.getTable(CatalogV2Util.scala:438)\n\tat org.apache.spark.sql.connector.catalog.CatalogV2Util$.loadTable(CatalogV2Util.scala:413)\n\tat org.apache.spark.sql.catalyst.analysis.RelationResolution.$anonfun$resolveRelation$6(RelationResolution.scala:136)\n\tat scala.Option.orElse(Option.scala:477)\n\tat org.apache.spark.sql.catalyst.analysis.RelationResolution.$anonfun$resolveRelation$2(RelationResolution.scala:132)\n\tat scala.Option.orElse(Option.scala:477)\n\tat org.apache.spark.sql.catalyst.analysis.RelationResolution.resolveRelation(RelationResolution.scala:108)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer$ResolveRelations$.resolveRelation(Analyzer.scala:1255)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer$ResolveRelations$$anonfun$apply$12.applyOrElse(Analyzer.scala:1179)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer$ResolveRelations$$anonfun$apply$12.applyOrElse(Analyzer.scala:1143)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$3(AnalysisHelper.scala:139)\n\tat org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:86)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$1(AnalysisHelper.scala:139)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.allowInvokingTransformsInAnalyzer(AnalysisHelper.scala:416)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning(AnalysisHelper.scala:135)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning$(AnalysisHelper.scala:131)\n\tat org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUpWithPruning(LogicalPlan.scala:37)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$2(AnalysisHelper.scala:136)\n\tat org.apache.spark.sql.catalyst.trees.UnaryLike.mapChildren(TreeNode.scala:1231)\n\tat org.apache.spark.sql.catalyst.trees.UnaryLike.mapChildren$(TreeNode.scala:1230)\n\tat org.apache.spark.sql.catalyst.plans.logical.Filter.mapChildren(basicLogicalOperators.scala:333)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$1(AnalysisHelper.scala:136)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.allowInvokingTransformsInAnalyzer(AnalysisHelper.scala:416)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning(AnalysisHelper.scala:135)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning$(AnalysisHelper.scala:131)\n\tat org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUpWithPruning(LogicalPlan.scala:37)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$2(AnalysisHelper.scala:136)\n\tat org.apache.spark.sql.catalyst.trees.UnaryLike.mapChildren(TreeNode.scala:1231)\n\tat org.apache.spark.sql.catalyst.trees.UnaryLike.mapChildren$(TreeNode.scala:1230)\n\tat org.apache.spark.sql.catalyst.plans.logical.Project.mapChildren(basicLogicalOperators.scala:72)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.$anonfun$resolveOperatorsUpWithPruning$1(AnalysisHelper.scala:136)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.allowInvokingTransformsInAnalyzer(AnalysisHelper.scala:416)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning(AnalysisHelper.scala:135)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.resolveOperatorsUpWithPruning$(AnalysisHelper.scala:131)\n\tat org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.resolveOperatorsUpWithPruning(LogicalPlan.scala:37)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer$ResolveRelations$.apply(Analyzer.scala:1143)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer$ResolveRelations$.apply(Analyzer.scala:1119)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$2(RuleExecutor.scala:242)\n\tat scala.collection.LinearSeqOps.foldLeft(LinearSeq.scala:183)\n\tat scala.collection.LinearSeqOps.foldLeft$(LinearSeq.scala:179)\n\tat scala.collection.immutable.List.foldLeft(List.scala:79)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1(RuleExecutor.scala:239)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$execute$1$adapted(RuleExecutor.scala:231)\n\tat scala.collection.immutable.List.foreach(List.scala:334)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.execute(RuleExecutor.scala:231)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.org$apache$spark$sql$catalyst$analysis$Analyzer$$executeSameContext(Analyzer.scala:340)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$execute$1(Analyzer.scala:336)\n\tat org.apache.spark.sql.catalyst.analysis.AnalysisContext$.withNewAnalysisContext(Analyzer.scala:234)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:336)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.execute(Analyzer.scala:299)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.$anonfun$executeAndTrack$1(RuleExecutor.scala:201)\n\tat org.apache.spark.sql.catalyst.QueryPlanningTracker$.withTracker(QueryPlanningTracker.scala:89)\n\tat org.apache.spark.sql.catalyst.rules.RuleExecutor.executeAndTrack(RuleExecutor.scala:201)\n\tat org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.resolveInFixedPoint(HybridAnalyzer.scala:190)\n\tat org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.$anonfun$apply$1(HybridAnalyzer.scala:76)\n\tat org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.withTrackedAnalyzerBridgeState(HybridAnalyzer.scala:111)\n\tat org.apache.spark.sql.catalyst.analysis.resolver.HybridAnalyzer.apply(HybridAnalyzer.scala:71)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.$anonfun$executeAndCheck$1(Analyzer.scala:330)\n\tat org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper$.markInAnalyzer(AnalysisHelper.scala:423)\n\tat org.apache.spark.sql.catalyst.analysis.Analyzer.executeAndCheck(Analyzer.scala:330)\n\tat org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$2(QueryExecution.scala:110)\n\tat org.apache.spark.sql.catalyst.QueryPlanningTracker.measurePhase(QueryPlanningTracker.scala:148)\n\tat org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$2(QueryExecution.scala:278)\n\tat org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:654)\n\tat org.apache.spark.sql.execution.QueryExecution.$anonfun$executePhase$1(QueryExecution.scala:278)\n\tat org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:804)\n\tat org.apache.spark.sql.execution.QueryExecution.executePhase(QueryExecution.scala:277)\n\tat org.apache.spark.sql.execution.QueryExecution.$anonfun$lazyAnalyzed$1(QueryExecution.scala:110)\n\tat scala.util.Try$.apply(Try.scala:217)\n\tat org.apache.spark.util.Utils$.doTryWithCallerStacktrace(Utils.scala:1378)\n\tat org.apache.spark.util.LazyTry.tryT$lzycompute(LazyTry.scala:46)\n\tat org.apache.spark.util.LazyTry.tryT(LazyTry.scala:46)\n\tat org.apache.spark.util.LazyTry.get(LazyTry.scala:58)\n\tat org.apache.spark.sql.execution.QueryExecution.analyzed(QueryExecution.scala:121)\n\tat org.apache.spark.sql.execution.QueryExecution.assertAnalyzed(QueryExecution.scala:80)\n\tat org.apache.spark.sql.classic.Dataset$.$anonfun$ofRows$5(Dataset.scala:139)\n\tat org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:804)\n\tat org.apache.spark.sql.classic.Dataset$.ofRows(Dataset.scala:136)\n\tat org.apache.spark.sql.classic.SparkSession.$anonfun$sql$4(SparkSession.scala:499)\n\tat org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:804)\n\tat org.apache.spark.sql.classic.SparkSession.sql(SparkSession.scala:490)\n\tat org.apache.spark.sql.classic.SparkSession.sql(SparkSession.scala:504)\n\tat org.apache.spark.sql.classic.SparkSession.sql(SparkSession.scala:513)\n\tat org.apache.spark.sql.classic.SparkSession.sql(SparkSession.scala:91)\n\tat org.apache.spark.sql.SQLContext.sql(SQLContext.scala:587)\n\tat org.apache.spark.sql.classic.SQLContext.sql(SQLContext.scala:267)\n\tat org.apache.spark.sql.classic.SQLContext.sql(SQLContext.scala:59)\n\tat org.apache.zeppelin.spark.SparkSqlInterpreter.internalInterpret(SparkSqlInterpreter.java:103)\n\tat org.apache.zeppelin.interpreter.AbstractInterpreter.interpret(AbstractInterpreter.java:55)\n\tat org.apache.zeppelin.interpreter.LazyOpenInterpreter.interpret(LazyOpenInterpreter.java:109)\n\tat org.apache.zeppelin.interpreter.remote.RemoteInterpreterServer$InterpretJob.jobRun(RemoteInterpreterServer.java:824)\n\tat org.apache.zeppelin.interpreter.remote.RemoteInterpreterServer$InterpretJob.jobRun(RemoteInterpreterServer.java:716)\n\tat org.apache.zeppelin.scheduler.Job.run(Job.java:187)\n\tat org.apache.zeppelin.scheduler.AbstractScheduler.runJob(AbstractScheduler.java:136)\n\tat org.apache.zeppelin.scheduler.ParallelScheduler.lambda$runJobInScheduler$0(ParallelScheduler.java:42)\n\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)\n\tat java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)\n\tat java.base/java.lang.Thread.run(Thread.java:840)\nCaused by: java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient\n\tat org.apache.hadoop.hive.metastore.MetaStoreUtils.newInstance(MetaStoreUtils.java:1742)\n\tat org.apache.hadoop.hive.metastore.RetryingMetaStoreClient.\u003cinit\u003e(RetryingMetaStoreClient.java:83)\n\tat org.apache.hadoop.hive.metastore.RetryingMetaStoreClient.getProxy(RetryingMetaStoreClient.java:133)\n\tat org.apache.hadoop.hive.metastore.RetryingMetaStoreClient.getProxy(RetryingMetaStoreClient.java:104)\n\tat org.apache.hadoop.hive.ql.metadata.Hive.createMetaStoreClient(Hive.java:3607)\n\tat org.apache.hadoop.hive.ql.metadata.Hive.getMSC(Hive.java:3659)\n\tat org.apache.hadoop.hive.ql.metadata.Hive.getMSC(Hive.java:3639)\n\tat org.apache.hadoop.hive.ql.metadata.Hive.getDatabase(Hive.java:1563)\n\t... 129 more\nCaused by: java.lang.reflect.InvocationTargetException\n\tat java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)\n\tat java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)\n\tat java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)\n\tat java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:500)\n\tat java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:481)\n\tat org.apache.hadoop.hive.metastore.MetaStoreUtils.newInstance(MetaStoreUtils.java:1740)\n\t... 136 more\nCaused by: MetaException(message:Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.\u003cinit\u003e(RetryingHMSHandler.java:83)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.getProxy(RetryingHMSHandler.java:92)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore.newRetryingHMSHandler(HiveMetaStore.java:6903)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStoreClient.\u003cinit\u003e(HiveMetaStoreClient.java:163)\n\tat org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient.\u003cinit\u003e(SessionHiveMetaStoreClient.java:70)\n\t... 142 more\nCaused by: MetaException(message:Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.invokeInternal(RetryingHMSHandler.java:211)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.invoke(RetryingHMSHandler.java:107)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.\u003cinit\u003e(RetryingHMSHandler.java:79)\n\t... 146 more\nCaused by: javax.jdo.JDOFatalDataStoreException: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\nNestedThrowables:\njava.sql.SQLException: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\n\tat org.datanucleus.api.jdo.NucleusJDOHelper.getJDOExceptionForNucleusException(NucleusJDOHelper.java:529)\n\tat org.datanucleus.api.jdo.JDOPersistenceManagerFactory.freezeConfiguration(JDOPersistenceManagerFactory.java:830)\n\tat org.datanucleus.api.jdo.JDOPersistenceManagerFactory.createPersistenceManagerFactory(JDOPersistenceManagerFactory.java:334)\n\tat org.datanucleus.api.jdo.JDOPersistenceManagerFactory.getPersistenceManagerFactory(JDOPersistenceManagerFactory.java:213)\n\tat jdk.internal.reflect.GeneratedMethodAccessor4.invoke(Unknown Source)\n\tat java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:569)\n\tat javax.jdo.JDOHelper$16.run(JDOHelper.java:1965)\n\tat java.base/java.security.AccessController.doPrivileged(AccessController.java:569)\n\tat javax.jdo.JDOHelper.invoke(JDOHelper.java:1960)\n\tat javax.jdo.JDOHelper.invokeGetPersistenceManagerFactoryOnImplementation(JDOHelper.java:1166)\n\tat javax.jdo.JDOHelper.getPersistenceManagerFactory(JDOHelper.java:808)\n\tat javax.jdo.JDOHelper.getPersistenceManagerFactory(JDOHelper.java:701)\n\tat org.apache.hadoop.hive.metastore.ObjectStore.getPMF(ObjectStore.java:522)\n\tat org.apache.hadoop.hive.metastore.ObjectStore.getPersistenceManager(ObjectStore.java:551)\n\tat org.apache.hadoop.hive.metastore.ObjectStore.initializeHelper(ObjectStore.java:406)\n\tat org.apache.hadoop.hive.metastore.ObjectStore.initialize(ObjectStore.java:343)\n\tat org.apache.hadoop.hive.metastore.ObjectStore.setConf(ObjectStore.java:304)\n\tat org.apache.hadoop.util.ReflectionUtils.setConf(ReflectionUtils.java:77)\n\tat org.apache.hadoop.util.ReflectionUtils.newInstance(ReflectionUtils.java:159)\n\tat org.apache.hadoop.util.ReflectionUtils.newInstance(ReflectionUtils.java:126)\n\tat org.apache.hadoop.hive.metastore.RawStoreProxy.\u003cinit\u003e(RawStoreProxy.java:58)\n\tat org.apache.hadoop.hive.metastore.RawStoreProxy.getProxy(RawStoreProxy.java:67)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore$HMSHandler.newRawStoreForConf(HiveMetaStore.java:629)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore$HMSHandler.getMSForConf(HiveMetaStore.java:595)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore$HMSHandler.getMS(HiveMetaStore.java:589)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore$HMSHandler.createDefaultDB(HiveMetaStore.java:660)\n\tat org.apache.hadoop.hive.metastore.HiveMetaStore$HMSHandler.init(HiveMetaStore.java:432)\n\tat jdk.internal.reflect.GeneratedMethodAccessor5.invoke(Unknown Source)\n\tat java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:569)\n\tat org.apache.hadoop.hive.metastore.RetryingHMSHandler.invokeInternal(RetryingHMSHandler.java:148)\n\t... 148 more\nCaused by: java.sql.SQLException: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\n\tat org.apache.derby.impl.jdbc.SQLExceptionFactory.getSQLException(SQLExceptionFactory.java:115)\n\tat org.apache.derby.impl.jdbc.SQLExceptionFactory.getSQLException(SQLExceptionFactory.java:141)\n\tat org.apache.derby.impl.jdbc.Util.seeNextException(Util.java:252)\n\tat org.apache.derby.impl.jdbc.EmbedConnection.bootDatabase(EmbedConnection.java:2848)\n\tat org.apache.derby.impl.jdbc.EmbedConnection.\u003cinit\u003e(EmbedConnection.java:406)\n\tat org.apache.derby.iapi.jdbc.InternalDriver.getNewEmbedConnection(InternalDriver.java:630)\n\tat org.apache.derby.iapi.jdbc.InternalDriver.connect(InternalDriver.java:295)\n\tat org.apache.derby.iapi.jdbc.InternalDriver.connect(InternalDriver.java:922)\n\tat org.apache.derby.iapi.jdbc.AutoloadedDriver.connect(AutoloadedDriver.java:132)\n\tat java.sql/java.sql.DriverManager.getConnection(DriverManager.java:681)\n\tat java.sql/java.sql.DriverManager.getConnection(DriverManager.java:190)\n\tat org.apache.commons.dbcp.DriverManagerConnectionFactory.createConnection(DriverManagerConnectionFactory.java:78)\n\tat org.apache.commons.dbcp.PoolableConnectionFactory.makeObject(PoolableConnectionFactory.java:582)\n\tat org.apache.commons.pool.impl.GenericObjectPool.borrowObject(GenericObjectPool.java:1148)\n\tat org.apache.commons.dbcp.PoolingDataSource.getConnection(PoolingDataSource.java:106)\n\tat org.datanucleus.store.rdbms.ConnectionFactoryImpl$ManagedConnectionImpl.getConnection(ConnectionFactoryImpl.java:483)\n\tat org.datanucleus.store.rdbms.RDBMSStoreManager.\u003cinit\u003e(RDBMSStoreManager.java:297)\n\tat jdk.internal.reflect.GeneratedConstructorAccessor81.newInstance(Unknown Source)\n\tat java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)\n\tat java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:500)\n\tat java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:481)\n\tat org.datanucleus.plugin.NonManagedPluginRegistry.createExecutableExtension(NonManagedPluginRegistry.java:606)\n\tat org.datanucleus.plugin.PluginManager.createExecutableExtension(PluginManager.java:301)\n\tat org.datanucleus.NucleusContextHelper.createStoreManagerForProperties(NucleusContextHelper.java:133)\n\tat org.datanucleus.PersistenceNucleusContextImpl.initialise(PersistenceNucleusContextImpl.java:422)\n\tat org.datanucleus.api.jdo.JDOPersistenceManagerFactory.freezeConfiguration(JDOPersistenceManagerFactory.java:817)\n\t... 178 more\nCaused by: ERROR XJ040: Failed to start database \u0027/tmp/warehouse/metastore_db1\u0027 with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@1dbd16a6, see the next exception for details.\n\tat org.apache.derby.shared.common.error.StandardException.newException(StandardException.java:299)\n\tat org.apache.derby.impl.jdbc.SQLExceptionFactory.wrapArgsForTransportAcrossDRDA(SQLExceptionFactory.java:170)\n\tat org.apache.derby.impl.jdbc.SQLExceptionFactory.getSQLException(SQLExceptionFactory.java:75)\n\t... 203 more\nCaused by: ERROR XSDB6: Another instance of Derby may have already booted the database /tmp/warehouse/metastore_db1.\n\tat org.apache.derby.shared.common.error.StandardException.newException(StandardException.java:299)\n\tat org.apache.derby.shared.common.error.StandardException.newException(StandardException.java:294)\n\tat org.apache.derby.impl.store.raw.data.BaseDataFileFactory.privGetJBMSLockOnDB(BaseDataFileFactory.java:2075)\n\tat org.apache.derby.impl.store.raw.data.BaseDataFileFactory.run(BaseDataFileFactory.java:2900)\n\tat org.apache.derby.impl.store.raw.data.BaseDataFileFactory.getJBMSLockOnDB(BaseDataFileFactory.java:1883)\n\tat org.apache.derby.impl.store.raw.data.BaseDataFileFactory.boot(BaseDataFileFactory.java:339)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.boot(BaseMonitor.java:1989)\n\tat org.apache.derby.impl.services.monitor.TopService.bootModule(TopService.java:334)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.startModule(BaseMonitor.java:527)\n\tat org.apache.derby.impl.services.monitor.FileMonitor.startModule(FileMonitor.java:45)\n\tat org.apache.derby.iapi.services.monitor.Monitor.bootServiceModule(Monitor.java:460)\n\tat org.apache.derby.impl.store.raw.RawStore.bootServiceModule(RawStore.java:2880)\n\tat org.apache.derby.impl.store.raw.RawStore.boot(RawStore.java:185)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.boot(BaseMonitor.java:1989)\n\tat org.apache.derby.impl.services.monitor.TopService.bootModule(TopService.java:334)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.startModule(BaseMonitor.java:527)\n\tat org.apache.derby.impl.services.monitor.FileMonitor.startModule(FileMonitor.java:45)\n\tat org.apache.derby.iapi.services.monitor.Monitor.bootServiceModule(Monitor.java:460)\n\tat org.apache.derby.impl.store.access.RAMAccessManager.bootServiceModule(RAMAccessManager.java:1332)\n\tat org.apache.derby.impl.store.access.RAMAccessManager.boot(RAMAccessManager.java:1035)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.boot(BaseMonitor.java:1989)\n\tat org.apache.derby.impl.services.monitor.TopService.bootModule(TopService.java:334)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.startModule(BaseMonitor.java:527)\n\tat org.apache.derby.impl.services.monitor.FileMonitor.startModule(FileMonitor.java:45)\n\tat org.apache.derby.iapi.services.monitor.Monitor.bootServiceModule(Monitor.java:460)\n\tat org.apache.derby.impl.db.BasicDatabase.bootServiceModule(BasicDatabase.java:945)\n\tat org.apache.derby.impl.db.BasicDatabase.bootStore(BasicDatabase.java:773)\n\tat org.apache.derby.impl.db.BasicDatabase.boot(BasicDatabase.java:182)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.boot(BaseMonitor.java:1989)\n\tat org.apache.derby.impl.services.monitor.TopService.bootModule(TopService.java:334)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.bootService(BaseMonitor.java:1817)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.startProviderService(BaseMonitor.java:1683)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.findProviderAndStartService(BaseMonitor.java:1567)\n\tat org.apache.derby.impl.services.monitor.BaseMonitor.startPersistentService(BaseMonitor.java:988)\n\tat org.apache.derby.iapi.services.monitor.Monitor.startPersistentService(Monitor.java:598)\n\tat org.apache.derby.impl.jdbc.EmbedConnection.startPersistentService(EmbedConnection.java:3994)\n\tat org.apache.derby.impl.jdbc.EmbedConnection.bootDatabase(EmbedConnection.java:2809)\n\t... 200 more\n"
+          }
+        ]
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1674828687570_593805698",
+      "id": "paragraph_1674828687570_593805698",
+      "dateCreated": "2023-01-27 09:11:27.570",
+      "dateStarted": "2026-02-19 00:59:17.773",
+      "dateFinished": "2026-02-19 00:59:38.811",
+      "status": "ERROR"
+    },
+    {
+      "text": "%sql\nDROP TABLE IF EXISTS default.orders_current;\n\n\nCREATE TABLE IF NOT EXISTS default.orders_current (\n    -- Transaction identifiers (from last update)\n    xid STRING COMMENT \u0027Oracle transaction ID from last update\u0027,\n    csn STRING COMMENT \u0027Oracle commit sequence number from last update\u0027,\n\n    -- Metadata\n    dwhProcessedTs STRING COMMENT \u0027Timestamp of last update to this record\u0027,\n\n    -- Flattened order attributes (current version only)\n    orderId DOUBLE COMMENT \u0027Primary order identifier (unique key)\u0027,\n    orderRef STRING COMMENT \u0027Current order reference\u0027,\n    version DOUBLE COMMENT \u0027Current order version number\u0027,\n    orderDate STRING COMMENT \u0027Current order date\u0027,\n    orderTs STRING COMMENT \u0027Current order timestamp\u0027,\n    orderStatus STRING COMMENT \u0027Current order status\u0027,\n    orderType STRING COMMENT \u0027Current order type\u0027,\n    totalAmount DOUBLE COMMENT \u0027Current total order amount\u0027,\n    currency STRING COMMENT \u0027Current order currency\u0027,\n    customerId STRING COMMENT \u0027Current customer identifier\u0027,\n    shippingAddressId STRING COMMENT \u0027Current shipping address identifier\u0027,\n    createdTs STRING COMMENT \u0027Record creation timestamp\u0027,\n\n    -- Before image preserved from SCD Type 2 (for audit)\n    orderBefore STRUCT\u003c\n        orderId: DOUBLE,\n        orderRef: STRING,\n        version: DOUBLE,\n        orderDate: STRING,\n        orderTs: STRING,\n        orderStatus: STRING,\n        orderType: STRING,\n        totalAmount: DOUBLE,\n        currency: STRING,\n        customerId: STRING,\n        shippingAddressId: STRING,\n        createdTs: STRING\n    \u003e COMMENT \u0027Before image from last change\u0027,\n\n    -- Order details (current version only, single struct — 1:1 with order)\n    orderDetails STRUCT\u003c\n        orderId: DOUBLE,\n        version: DOUBLE,\n        shippingMethod: STRING,\n        trackingNumber: STRING,\n        shippedTs: STRING,\n        estimatedDeliveryDate: STRING,\n        carrier: STRING,\n        deliveryStatus: STRING,\n        before: STRUCT\u003c\n            orderId: DOUBLE,\n            version: DOUBLE,\n            shippingMethod: STRING,\n            trackingNumber: STRING,\n            shippedTs: STRING,\n            estimatedDeliveryDate: STRING,\n            carrier: STRING,\n            deliveryStatus: STRING\n        \u003e\n    \u003e COMMENT \u0027Current order details (latest version)\u0027,\n\n    -- Order line items array (current versions only — 1:N with order)\n    lineItems ARRAY\u003cSTRUCT\u003c\n        lineItemId: DOUBLE,\n        orderId: DOUBLE,\n        version: DOUBLE,\n        productId: STRING,\n        itemQty: DOUBLE,\n        itemPrice: DOUBLE,\n        itemAmount: DOUBLE,\n        itemCurrency: STRING,\n        before: STRUCT\u003c\n            lineItemId: DOUBLE,\n            orderId: DOUBLE,\n            version: DOUBLE,\n            productId: STRING,\n            itemQty: DOUBLE,\n            itemPrice: DOUBLE,\n            itemAmount: DOUBLE,\n            itemCurrency: STRING\n        \u003e\n    \u003e\u003e COMMENT \u0027Array of current order line items (each at its latest version)\u0027\n)\nUSING DELTA;",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:57:10.093",
+      "progress": 0,
+      "config": {
+        "colWidth": 12.0,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 9.0,
+        "results": {},
+        "enabled": true,
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        }
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": []
+      },
+      "apps": [],
+      "runtimeInfos": {
+        "jobUrl": {
+          "propertyName": "jobUrl",
+          "label": "SPARK JOB",
+          "tooltip": "View in Spark web UI",
+          "group": "spark",
+          "values": [
+            {
+              "jobUrl": "http://nnagarajan-z690:4040/jobs/job?id\u003d1"
+            }
+          ],
+          "interpreterSettingId": "spark"
+        }
+      },
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1771479307026_916767693",
+      "id": "paragraph_1771479307026_916767693",
+      "dateCreated": "2026-02-19 00:35:07.026",
+      "dateStarted": "2026-02-19 00:57:10.095",
+      "dateFinished": "2026-02-19 00:57:11.370",
+      "status": "FINISHED"
+    },
+    {
+      "text": "%sql\n",
+      "user": "anonymous",
+      "dateUpdated": "2026-02-19 00:35:52.719",
+      "progress": 0,
+      "config": {},
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1771479352718_579634897",
+      "id": "paragraph_1771479352718_579634897",
+      "dateCreated": "2026-02-19 00:35:52.719",
+      "status": "READY"
+    }
+  ],
+  "name": "Spark DeltaLake",
+  "id": "2HJZN7HX9",
+  "defaultInterpreterGroup": "spark",
+  "version": "0.10.1",
+  "noteParams": {},
+  "noteForms": {},
+  "angularObjects": {},
+  "config": {
+    "isZeppelinNotebookCronEnable": false,
+    "looknfeel": "default",
+    "personalizedMode": "false"
+  },
+  "info": {}
+}

@@ -17,7 +17,7 @@ The application processes 4 Kafka topics:
 3. `dev.appuser.order_line_items.json` - Order line items
 4. `dev.transaction_metadata_json` - Transaction metadata with event counts
 
-Events are grouped by transaction (xid:csn), buffered in RocksDB state, and emitted as denormalized records when all expected events arrive.
+Events are buffered per transaction (xid:csn) in RocksDB state and emitted as denormalized records when all expected events arrive, strictly in source commit order: the order of the markers on the single-partition metadata topic.
 
 ## Building
 
@@ -39,7 +39,7 @@ Or using Maven wrapper:
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0,io.delta:delta-spark_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
@@ -54,7 +54,7 @@ spark-submit \
 $SPARK_HOME/bin/spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0,io.delta:delta-spark_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
@@ -156,11 +156,28 @@ The application writes to a Delta Lake table (`order_stream`) with nested arrays
 
 1. **Ingestion**: All 4 topics are read as Kafka streams
 2. **Parsing**: JSON events are parsed into structured format
-3. **Grouping**: Events are grouped by transaction key (xid:csn)
-4. **Buffering**: CDC events are buffered in RocksDB state
-5. **Completion Detection**: Transaction metadata provides expected event counts
-6. **Joining**: When complete, events are joined by ORDER_ID
-7. **Emission**: Denormalized records are written to Delta Lake table
+3. **Sequencing**: All events go to one stateful sequencer (`transformWithState` on a single key). It sees every in-flight transaction.
+4. **Buffering**: CDC events are buffered per transaction (`xid:csn`) in RocksDB state, deduplicated on GoldenGate `pos`
+5. **Completion Detection**: The transaction's marker gives the exact per-table event count. Deletes are filtered at the GoldenGate Extract, so they appear in neither the data nor the counts.
+6. **Ordering**: Markers are queued in metadata-topic offset order (commit order). Transactions are emitted from the head of the queue while the head is complete; an incomplete head blocks everything behind it and is never skipped.
+7. **Joining**: When emitted, events are joined by ORDER_ID
+8. **Emission**: Denormalized records are written to Delta Lake. Each commit contains only transactions later than every earlier commit.
+
+Replays are dropped: markers and events for transactions already emitted (CSN below the last emitted CSN, or equal with an already-emitted xid) never create new state.
+
+### Source Ordering Contract
+
+Ordering holds only if `dev.transaction_metadata_json` has **exactly one partition** and the
+`rep3` replicat publishes synchronously with idempotent, `acks=all` writes. Deletes are filtered
+only at the Extract (`IGNOREDELETES` in `ext04.prm`), never at a single replicat. The app fails the query if it reads a marker from any other partition.
+See [gg-configs/README.md](gg-configs/README.md) for setup and migration.
+
+### Blocked Transactions
+
+If the head transaction stays incomplete longer than `job.ordering.blocked-alert-threshold`
+(default 10 minutes), the app logs an error with its `xid:csn`, its per-table progress and the
+number of transactions queued behind it. The check also runs without new input, on a timer every
+`job.ordering.check-interval`. Output stays halted until the head completes.
 
 ## State Management
 
@@ -171,7 +188,19 @@ spark.sql.streaming.stateStore.providerClass=
   org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider
 ```
 
-State is persisted to the checkpoint location and survives application restarts.
+The app sets this provider itself before starting the query; `transformWithState` requires it.
+
+State is persisted to the checkpoint location and survives application restarts. It holds:
+- per-transaction buffers keyed by `xid:csn`
+- the emission queue, in marker order
+- a cursor recording the last emitted CSN and the xids emitted at it
+
+The query runs with a processing-time trigger (`job.ordering.trigger-interval`, default 10 s).
+This is required: in processing-time mode, Spark 4.0's `transformWithState` always requests
+another micro-batch, so without a trigger interval, empty batches would run back to back.
+
+**Upgrading:** the state layout is incompatible with checkpoints written by earlier versions,
+which grouped by `xid:csn` with `flatMapGroupsWithState`. Use a new checkpoint location.
 
 ## Delta Lake Table Management
 
@@ -187,7 +216,7 @@ To query the output table:
 
 ```bash
 spark-sql \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   -f db/query_table.sql
@@ -218,6 +247,6 @@ See [SCD_TYPE1_README.md](SCD_TYPE1_README.md) for detailed documentation.
 
 This Spark implementation achieves similar transactional consistency guarantees as the Flink-based [transactional-cdc-processing](../transactional-cdc-processing) but uses:
 - Spark Structured Streaming instead of Flink DataStream API
-- Event count-based completion instead of watermark advancement
+- Event count-based completion with marker-order sequencing instead of watermark advancement
 - RocksDB state store instead of Flink keyed state
-- `flatMapGroupsWithState` instead of custom operators
+- `transformWithState` (one global sequencer) instead of custom operators

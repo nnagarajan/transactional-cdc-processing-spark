@@ -3,10 +3,10 @@
 -- order details, and line items — all as arrays of structs with before images.
 
 -- Drop table if exists (for recreation)
-DROP TABLE IF EXISTS default.order_stream;
+DROP TABLE IF EXISTS {{CATALOG_SCHEMA}}.order_stream;
 
--- Create external Delta Lake table with nested schema
-CREATE TABLE IF NOT EXISTS default.order_stream (
+-- Create a Unity Catalog managed Delta table (UC picks the storage path under the schema's storage root)
+CREATE TABLE IF NOT EXISTS {{CATALOG_SCHEMA}}.order_stream (
     -- Transaction identifiers
     xid STRING COMMENT 'Oracle transaction ID (xid)',
     csn STRING COMMENT 'Oracle commit sequence number',
@@ -87,46 +87,10 @@ CREATE TABLE IF NOT EXISTS default.order_stream (
         >
     >> COMMENT 'Array of order line items with before images'
 )
-USING DELTA;
+USING DELTA
+TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported');
 
--- Create a view for easier querying (flattened from orders array)
-CREATE OR REPLACE VIEW default.order_stream_current AS
-SELECT
-    orderId,
-    xid,
-    csn,
-    dwhProcessedTs,
-    orders[0].orderRef as orderRef,
-    orders[0].orderStatus as orderStatus,
-    orders[0].totalAmount as totalAmount,
-    orders[0].currency as currency,
-    orders[0].orderDate as orderDate,
-    orders[0].version as orderVersion,
-    size(orderDetails) as detail_count,
-    size(lineItems) as line_item_count
-FROM order_stream;
-
--- Create a view showing changes (where before image exists in orders array)
-CREATE OR REPLACE VIEW default.order_stream_changes AS
-SELECT
-    orderId,
-    xid,
-    csn,
-    dwhProcessedTs,
-    o.orderRef,
-    o.orderStatus,
-    o.totalAmount,
-    o.version as orderVersion,
-    o.before.totalAmount as previous_total_amount,
-    o.before.orderStatus as previous_status,
-    o.before.version as previous_version,
-    CASE
-        WHEN o.before IS NOT NULL THEN 'UPDATED'
-        ELSE 'INSERTED'
-    END as change_type
-FROM order_stream
-LATERAL VIEW explode(orders) orders_table AS o
-WHERE o.before IS NOT NULL;
+-- Views are in db/views.sql: the Unity Catalog Spark connector (0.4.0) doesn't support views.
 
 -- Show table description
-DESCRIBE EXTENDED default.order_stream;
+DESCRIBE EXTENDED {{CATALOG_SCHEMA}}.order_stream;

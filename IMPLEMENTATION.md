@@ -52,7 +52,7 @@ mvn clean package
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
   localhost:9092 \
   /tmp/spark-checkpoints
@@ -69,7 +69,7 @@ spark-submit \
   --executor-cores 2 \
   --executor-memory 4G \
   --driver-memory 2G \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 \
   --conf spark.sql.streaming.stateStore.providerClass=org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
   kafka-broker1:9092,kafka-broker2:9092 \
@@ -209,7 +209,7 @@ Key metrics to monitor:
 ls -lh <checkpoint-location>/state/
 
 # View state store metadata
-spark-shell --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0
+spark-shell --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1
 ```
 
 ### Debugging

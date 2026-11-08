@@ -39,6 +39,7 @@ Current state table with flattened order attributes, single orderDetails struct 
 - **table_maintenance.sql** - Maintenance operations (vacuum, optimize, etc.)
 - **schema_evolution.sql** - Examples of schema evolution operations
 - **oracle-ddl.sql** - Oracle source table DDL
+- **views.sql** - Temporary views over both tables (not run by SeedJob; the Unity Catalog Spark connector has no view support before Spark 4.2)
 
 ## Usage
 
@@ -46,7 +47,7 @@ Current state table with flattened order attributes, single orderDetails struct 
 
 ```bash
 spark-sql \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   -f db/create_table.deltalake.sql

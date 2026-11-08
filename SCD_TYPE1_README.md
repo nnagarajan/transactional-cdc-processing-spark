@@ -22,7 +22,24 @@ Unlike simple SCD Type 1 which replaces entire records, this implementation:
 
 ### Duplicate Handling
 - Ignores records with same `ORDER_ID` and `VERSION`
-- Uses `dwh_processed_ts` as tiebreaker for same-version updates
+- Within one batch, rows with the same (or no) order version are tie-broken by the highest
+  numeric `csn`, which is the latest commit. Processing time is not used.
+
+### CSN Guard on Transaction Context
+- `xid`, `csn` and `dwhProcessedTs` are updated only by a source row whose `csn` is
+  numerically greater than the row's current `csn` (`100` beats `99`).
+- A replayed or late older transaction can still contribute higher-version children,
+  but never moves the row's transaction context backwards.
+
+### Placeholder Rows
+- If a batch contains only detail or line item changes for an order that is not yet in
+  `orders_current` (for example, an order created before CDC capture began), the order is
+  **inserted as a placeholder**: order attributes, including `version`, are `NULL`, and the
+  children are kept.
+- When the order's own record later arrives, its attributes fill the row. Children are kept
+  unless superseded by higher versions.
+- Consumers must tolerate rows with `version IS NULL`. To list placeholders:
+  `SELECT orderId FROM orders_current WHERE version IS NULL`.
 
 ### Smart Merging
 - An order at version 3 with order details at version 2 can coexist
@@ -48,7 +65,7 @@ mvn clean package
 spark-submit \
   --class com.technext.demos.txbuffering.ScdType1MergeApp \
   --master local[2] \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
@@ -64,7 +81,7 @@ spark-submit \
   --class com.technext.demos.txbuffering.ScdType1MergeApp \
   --master yarn \
   --deploy-mode cluster \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
@@ -105,6 +122,12 @@ For each incoming record from `order_stream`:
    - **Order fields**: Update only if `source.version > target.version`
    - **Order details struct**: Replace if `source.orderDetails.version > target.orderDetails.version`
    - **Line items array**: Merge each line item by `lineItemId`, keeping higher `version`
+   - **Transaction context** (`xid`, `csn`, `dwhProcessedTs`): Update only if
+     `CAST(source.csn AS DECIMAL(38,0)) > CAST(target.csn AS DECIMAL(38,0))`
+
+4. **No match**: Insert the row, including child-only rows as placeholders (see above)
+
+The merge logic lives in `ScdType1Merger`; `ScdType1MergeApp` only runs the stream.
 
 ### Example Scenario
 
@@ -158,7 +181,7 @@ For each incoming record from `order_stream`:
 
 ```bash
 spark-sql \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   -f db/create_scd1_table.sql
@@ -168,7 +191,7 @@ spark-sql \
 
 ```bash
 spark-sql \
-  --packages io.delta:delta-spark_2.13:4.0.0 \
+  --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   -f db/query_scd1_table.sql

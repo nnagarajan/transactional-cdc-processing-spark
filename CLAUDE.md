@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Spark Structured Streaming application for transactionally consistent CDC event processing. Reads CDC events from multiple Kafka topics (Oracle GoldenGate format), buffers them per-transaction using `flatMapGroupsWithState` with RocksDB, and emits denormalized records to Delta Lake only when all events for a transaction have arrived.
+Spark Structured Streaming application for transactionally consistent CDC event processing. Reads CDC events from multiple Kafka topics (Oracle GoldenGate format), buffers them per-transaction in a single `transformWithState` sequencer with RocksDB, and emits denormalized records to Delta Lake only when all events for a transaction have arrived, strictly in source commit order.
 
 Written in Scala 2.13. This is the Spark port of the Flink-based `transactional-cdc-processing` project in the parent repository. The key difference: Flink uses custom operators with LSN-based watermarks, while Spark uses event-count matching from transaction metadata.
 
@@ -17,7 +17,7 @@ Written in Scala 2.13. This is the Spark port of the Flink-based `transactional-
 ./mvnw test -Dtest=ClassName  # Single test
 ```
 
-JDK 17 target. Scala 2.13.16 compiled via `scala-maven-plugin`. Spark SQL and Jackson are `provided` scope (supplied at runtime by spark-submit). Key versions: Spark 4.0.0, Delta Lake 4.0.0.
+JDK 17 target. Scala 2.13.17 compiled via `scala-maven-plugin`. Spark SQL and Jackson are `provided` scope (supplied at runtime by spark-submit). Key versions: Spark 4.1.1, Delta Lake 4.2.0 (`delta-spark_4.1_2.13`), Unity Catalog Spark connector 0.5.0 (`unitycatalog-spark_4.1_2.13`), matching Databricks Runtime 18.
 
 Surefire/Failsafe require `--add-opens` JVM args for Spark/Java 17 compatibility (configured in pom.xml).
 
@@ -27,30 +27,37 @@ Surefire/Failsafe require `--add-opens` JVM args for Spark/Java 17 compatibility
 
 **TransactionalCdcProcessingApp** (Scala object) — Main streaming pipeline:
 ```
-4 Kafka topics → parse JSON → union → group by xid:csn → flatMapGroupsWithState → Delta Lake
+4 Kafka topics → parse JSON → union → group by one global key → transformWithState (TransactionOrderingProcessor) → Delta Lake
 ```
 
 **ScdType1MergeApp** (Scala object) — Downstream merge pipeline:
 ```
-order_stream (SCD Type 2) → foreachBatch → Delta MERGE → orders_current (SCD Type 1)
+order_stream (SCD Type 2) → foreachBatch → ScdType1Merger (Delta MERGE) → orders_current (SCD Type 1)
 ```
 
-### Transaction-Aware Buffering (core pattern)
+### Ordered Transaction Assembly (core pattern)
 
-Events are grouped by transaction key (`xid:csn` = transaction ID : commit sequence number). The `processTransaction` method in `TransactionalCdcProcessingApp` is the stateful processing function passed to `flatMapGroupsWithState`:
+All rows share one grouping key, so a single `TransactionOrderingProcessor` (`transformWithState`, processing-time mode) sees every in-flight transaction. It is a thin Spark adapter over `TransactionSequencer`, which holds the logic and is unit-tested without Spark through the `SequencerStore` trait.
 
-1. Receives a transaction metadata event containing expected per-table event counts
-2. Buffers CDC events in `TransactionState` (separated by table: ORDERS, ORDER_DETAILS, ORDER_LINE_ITEMS)
-3. When `TransactionState.isComplete` returns true (all expected counts met), calls `OrderJoiner.joinTransaction()` to produce denormalized `OrderStream` records
-4. Removes state after emission; returns empty iterator while incomplete
+1. Data events are buffered per transaction (`xid:csn`) in `TransactionState`, separated by table and deduplicated on `pos`
+2. Markers (transaction metadata) must come from partition 0 of the metadata topic, or the query fails. They are queued in Kafka offset order, which is commit order. Duplicate markers are ignored.
+3. After each batch (and on a timer), transactions are emitted from the head of the queue while `TransactionState.isComplete` is true, meaning exact per-table counts. `OrderJoiner.joinTransaction()` produces the `OrderStream` records.
+4. An incomplete head blocks all later transactions and is never skipped. An error is logged once it has been blocked longer than `job.ordering.blocked-alert-threshold`.
+5. Events and markers for already-emitted transactions are dropped. The `Cursor` tracks the last emitted CSN (compared numerically) and the xids emitted at it.
+
+State: `MapState` buffers, `MapState` queue (sequence number → `xid:csn`), `ValueState[Cursor]`. The sink uses a processing-time trigger (`job.ordering.trigger-interval`), because Spark 4.x `transformWithState` in processing-time mode otherwise runs empty batches back to back. Tests therefore wait on query progress, not `processAllAvailable()`.
 
 ### Key Classes
 
 | Class | Role |
 |-------|------|
-| `TransactionalCdcProcessingApp` | Entry point (Scala object); Kafka source, JSON parsing, stream union, stateful processing, Delta sink |
-| `ScdType1MergeApp` | Scala object; reads SCD Type 2 Delta table, merges into SCD Type 1 using version-aware Delta MERGE |
-| `TransactionState` | Serializable state class buffering events per transaction; tracks expected vs. received counts |
+| `TransactionalCdcProcessingApp` | Entry point (Scala object); Kafka source, JSON parsing (markers keep Kafka partition/offset), stream union, Delta sink |
+| `TransactionOrderingProcessor` | `StatefulProcessor` adapter; `orderTransactions()` wires `transformWithState` (classic Spark only) |
+| `TransactionSequencer` | Pure sequencing logic: accept/drop rules, emission walk, blocked tracking |
+| `CdcRows` | Converts union rows into `DataChangeEvent` / `TransactionMetadata` / sequencer inputs |
+| `ScdType1MergeApp` | Scala object; streams the SCD Type 2 Delta table into `ScdType1Merger` |
+| `ScdType1Merger` | Version-aware Delta MERGE; CSN-guarded transaction context; child-only rows become placeholders |
+| `TransactionState` | Serializable state class buffering events per transaction; dedups on `pos`; exact expected vs. received counts |
 | `OrderJoiner` | Scala object with `joinTransaction()` that denormalizes buffered events into `OrderStream` records |
 | `DataChangeEvent` | Generic CDC event model (table, op_type, before/after maps, xid, csn) |
 | `TransactionMetadata` | Transaction metadata with per-table event counts; `DataCollectionCount` is a companion top-level class |
@@ -84,13 +91,16 @@ Required Spark configs set programmatically in the app:
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0,io.delta:delta-spark_2.13:4.0.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
   <kafka-bootstrap-servers> <checkpoint-location> <delta-table-path>
 ```
 
 ## Known Limitations
 
-- No TTL or timeout for incomplete transactions (state grows if metadata or events are lost)
-- Late-arriving events after transaction completion are silently lost
+- A transaction that never completes (lost event or marker) halts all output until someone intervenes; it is alerted on, never skipped
+- Transaction assembly runs as a single task (one global key), so it does not scale out
+- Data events whose marker never arrives stay buffered indefinitely (no TTL); they cannot block output, but they consume state
+- The metadata topic must have exactly one partition, and markers must arrive in commit (CSN-nondecreasing) order; a marker below the last emitted CSN is dropped with a WARN
+- The state layout is incompatible with pre-ordering checkpoints; upgrading requires a new checkpoint location
 - No watermark advancement (unlike the Flink implementation)

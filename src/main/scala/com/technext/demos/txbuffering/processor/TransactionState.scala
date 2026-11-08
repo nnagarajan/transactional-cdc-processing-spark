@@ -11,6 +11,8 @@ import java.{util => ju}
 
 import scala.beans.BeanProperty
 
+import org.apache.logging.log4j.scala.Logger
+
 import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, TransactionMetadata}
 
 /**
@@ -46,23 +48,57 @@ class TransactionState extends Serializable {
   def getExpectedOrderDetailCount: Int = _expectedOrderDetailCount
   def getExpectedOrderLineItemCount: Int = _expectedOrderLineItemCount
 
-  def addEvent(event: DataChangeEvent): Unit = {
-    event.tableName match {
-      case "ORDERS"           => orderEvents.add(event)
-      case "ORDER_DETAILS"    => orderDetailEvents.add(event)
-      case "ORDER_LINE_ITEMS" => orderLineItemEvents.add(event)
-      case _                  => // Unknown table, ignore
+  /**
+   * Buffers an event unless an event with the same GoldenGate trail position (`pos`)
+   * is already buffered for the same table. Re-sent events therefore never count twice.
+   *
+   * @return true if the event was buffered, false if it was ignored
+   */
+  def addEvent(event: DataChangeEvent): Boolean = {
+    val target = event.tableName match {
+      case "ORDERS"           => orderEvents
+      case "ORDER_DETAILS"    => orderDetailEvents
+      case "ORDER_LINE_ITEMS" => orderLineItemEvents
+      case _                  => null // Unknown table, ignore
+    }
+    if (target == null || containsPos(target, event.pos)) false
+    else {
+      target.add(event)
+      true
     }
   }
 
-  def isComplete: Boolean =
-    _metadata != null &&
-      orderEvents.size >= _expectedOrderCount &&
-      orderDetailEvents.size >= _expectedOrderDetailCount &&
-      orderLineItemEvents.size >= _expectedOrderLineItemCount
+  private def containsPos(events: ju.List[DataChangeEvent], pos: String): Boolean =
+    pos != null && events.stream().anyMatch(e => pos == e.pos)
+
+  /**
+   * Complete when the marker has arrived and each table has exactly the declared number of
+   * distinct events. More events than declared means the marker and data disagree: this is
+   * logged and treated as incomplete, so it surfaces as a blocked transaction instead of
+   * being emitted with the wrong contents.
+   */
+  def isComplete: Boolean = {
+    if (_metadata == null) return false
+    if (isOverfilled) {
+      TransactionState.log.error(s"Transaction $xid:$csn has more events than its marker declares. $progress")
+      return false
+    }
+    orderEvents.size == _expectedOrderCount &&
+    orderDetailEvents.size == _expectedOrderDetailCount &&
+    orderLineItemEvents.size == _expectedOrderLineItemCount
+  }
+
+  private def isOverfilled: Boolean =
+    orderEvents.size > _expectedOrderCount ||
+      orderDetailEvents.size > _expectedOrderDetailCount ||
+      orderLineItemEvents.size > _expectedOrderLineItemCount
 
   def progress: String =
     s"Orders: ${orderEvents.size}/${_expectedOrderCount}, " +
       s"Details: ${orderDetailEvents.size}/${_expectedOrderDetailCount}, " +
       s"LineItems: ${orderLineItemEvents.size}/${_expectedOrderLineItemCount}"
+}
+
+object TransactionState {
+  private val log: Logger = Logger(classOf[TransactionState])
 }

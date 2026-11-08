@@ -5,6 +5,7 @@ exttrail /opt/oracle/gg/gg_home/dirdat/e4
 sourcecatalog orclpdb
 UPDATERECORDFORMAT FULL
 LOGALLSUPCOLS
+IGNOREDELETES
 table appuser.ORDERS, KEYCOLS (ORDER_ID);
 table appuser.ORDER_DETAILS, KEYCOLS (ORDER_ID);
 table appuser.ORDER_LINE_ITEMS, KEYCOLS(LINE_ITEM_ID);

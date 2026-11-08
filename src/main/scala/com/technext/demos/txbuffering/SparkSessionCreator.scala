@@ -22,22 +22,26 @@ object SparkSessionCreator extends Logging {
       SparkSession.builder().getOrCreate()
     } else {
       logger.info("Using dev configuration for spark")
-      val builder = SparkSession.builder()
+      val catalogName = config.getString("spark.unity-catalog.catalog-name")
+
+      SparkSession.builder()
         .master(config.getString("spark.dev.master"))
         .appName(config.getString("spark.dev.app-name"))
         .config("spark.sql.extensions", config.getString("spark.extensions.sql-extensions"))
         .config("spark.sql.catalog.spark_catalog", config.getString("spark.extensions.catalog"))
+        .config(s"spark.sql.catalog.$catalogName", config.getString("spark.unity-catalog.catalog-class"))
+        .config(s"spark.sql.catalog.$catalogName.uri", config.getString("spark.unity-catalog.uri"))
+        .config(s"spark.sql.catalog.$catalogName.auth.type", config.getString("spark.unity-catalog.auth-type"))
+        .config(s"spark.sql.catalog.$catalogName.auth.token", config.getString("spark.unity-catalog.auth-token"))
+        .config(s"spark.sql.catalog.$catalogName.credentialVending", config.getString("spark.unity-catalog.credential-vending"))
+        .config("spark.sql.defaultCatalog", catalogName)
         .config("spark.ui.port", config.getString("spark.ui-port"))
         .config("spark.sql.warehouse.dir", config.getString("spark.warehouse-dir"))
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", config.getString("spark.hive.connection-url"))
-        .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", config.getString("spark.hive.connection-driver"))
         .config("spark.sql.streaming.stateStore.providerClass", config.getString("spark.state-store.provider-class"))
         .config("spark.executor.memory", config.getString("spark.resources.executor-memory"))
         .config("spark.driver.memory", config.getString("spark.resources.driver-memory"))
         .config("spark.driver.cores", config.getString("spark.resources.driver-cores"))
-
-      if (config.getBoolean("spark.dev.enable-hive-support")) builder.enableHiveSupport().getOrCreate()
-      else builder.getOrCreate()
+        .getOrCreate()
     }
   }
 }

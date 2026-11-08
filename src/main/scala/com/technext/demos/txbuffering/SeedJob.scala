@@ -22,6 +22,7 @@ object SeedJob extends App with Logging {
 
   val config = AppConfig.load("seed-job")
   val scriptsDir = config.getString("job.scripts-dir")
+  val catalogSchema = config.getString("job.catalog-schema")
 
   logger.info("Starting Seed Job")
   logger.info(s"Scripts directory: $scriptsDir")
@@ -47,6 +48,7 @@ object SeedJob extends App with Logging {
     scripts.foreach { scriptFile =>
       logger.info(s"Executing script: ${scriptFile.getName}")
       val content = new String(Files.readAllBytes(scriptFile.toPath))
+        .replace("{{CATALOG_SCHEMA}}", catalogSchema)
 
       val statements = content
         .split(";")

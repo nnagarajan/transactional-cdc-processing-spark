@@ -7,25 +7,22 @@
  */
 package com.technext.demos.txbuffering
 
-import scala.collection.mutable
-import scala.jdk.CollectionConverters._
-
 import com.typesafe.config.Config
 import org.apache.logging.log4j.scala.Logging
-import org.apache.spark.sql.{Dataset, Encoders, Row, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode}
+import org.apache.spark.sql.streaming.{OutputMode, Trigger}
 
-import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, DataCollectionCount, TransactionMetadata}
 import com.technext.demos.txbuffering.model.order.OrderStream
-import com.technext.demos.txbuffering.processor.{OrderJoiner, TransactionState}
+import com.technext.demos.txbuffering.processor.TransactionOrderingProcessor
 
 /**
  * Spark Structured Streaming application for transactionally consistent CDC processing.
  *
  * Buffers CDC events from orders, order_details, and order_line_items topics,
  * uses transaction metadata to determine when all events in a transaction have arrived,
- * and emits denormalized records only when transactions are complete.
+ * and emits denormalized records only when transactions are complete, strictly in the
+ * order their markers appear on the single-partition transaction metadata topic (commit order).
  */
 object TransactionalCdcProcessingApp extends App with Logging {
 
@@ -34,11 +31,15 @@ object TransactionalCdcProcessingApp extends App with Logging {
   val kafkaBootstrapServers = config.getString("job.kafka.bootstrap-servers")
   val checkpointLocation = config.getString("job.output.checkpoint-location")
   val deltaTableName = config.getString("job.output.delta-table-name")
+  val blockedAlertThresholdMs = config.getDuration("job.ordering.blocked-alert-threshold").toMillis
+  val checkIntervalMs = config.getDuration("job.ordering.check-interval").toMillis
+  val triggerIntervalMs = config.getDuration("job.ordering.trigger-interval").toMillis
 
   logger.info("Starting Transactional CDC Processing Application")
   logger.info(s"Kafka Bootstrap Servers: $kafkaBootstrapServers")
   logger.info(s"Checkpoint Location: $checkpointLocation")
   logger.info(s"Delta Table: $deltaTableName")
+  logger.info(s"Blocked-transaction alert threshold: ${blockedAlertThresholdMs}ms, check interval: ${checkIntervalMs}ms, trigger interval: ${triggerIntervalMs}ms")
 
   val spark = SparkSessionCreator.getSpark(config)
   spark.sparkContext.setLogLevel(config.getString("spark.log-level"))
@@ -62,20 +63,20 @@ object TransactionalCdcProcessingApp extends App with Logging {
     .union(txMetadataEvents)
     .filter(col("xid").isNotNull.and(col("csn").isNotNull))
 
-  // Group by transaction key (xid:csn) and process with state
-  implicit val stringEncoder: org.apache.spark.sql.Encoder[String] = Encoders.STRING
-  implicit val stateEncoder: org.apache.spark.sql.Encoder[TransactionState] = Encoders.bean(classOf[TransactionState])
-  implicit val outputEncoder: org.apache.spark.sql.Encoder[OrderStream] = Encoders.bean(classOf[OrderStream])
+  // Assemble transactions and emit them in commit order (single global sequencer)
+  val joinedOrders: Dataset[OrderStream] =
+    TransactionOrderingProcessor.orderTransactions(allEvents, blockedAlertThresholdMs, checkIntervalMs)
 
-  val joinedOrders: Dataset[OrderStream] = allEvents
-    .groupByKey((row: Row) => row.getString(row.fieldIndex("xid")) + ":" + row.getString(row.fieldIndex("csn")))
-    .flatMapGroupsWithState(OutputMode.Append(), GroupStateTimeout.NoTimeout())(processTransaction)
-
-  // Write to Delta Lake table
+  // Write to Delta Lake table.
+  // An explicit trigger is required: in processing-time mode, Spark 4.0's transformWithState
+  // always requests another (no-data) batch, so the default trigger would run empty batches
+  // back to back. With a fixed interval, idle batches run once per interval and drive the
+  // blocked-transaction timer.
   val query = joinedOrders.writeStream
     .format("delta")
     .option("checkpointLocation", checkpointLocation)
     .outputMode(OutputMode.Append())
+    .trigger(Trigger.ProcessingTime(triggerIntervalMs))
     .toTable(deltaTableName)
 
   logger.info(s"Streaming query started. Writing to Delta Lake table: $deltaTableName")
@@ -110,14 +111,19 @@ object TransactionalCdcProcessingApp extends App with Logging {
         col("data.after").as("after"),
         lit(eventType).as("event_type"),
         lit(null).cast("int").as("expected_count"),
-        lit(null).cast("array<struct<data_collection:string,event_count:int>>").as("data_collections"))
+        lit(null).cast("array<struct<data_collection:string,event_count:int>>").as("data_collections"),
+        lit(null).cast("int").as("marker_partition"),
+        lit(null).cast("long").as("marker_offset"))
 
+  /** Markers keep their Kafka partition and offset: the offset defines emission order. */
   private def parseTransactionMetadata(rawStream: Dataset[Row]): Dataset[Row] =
     rawStream
-      .selectExpr("CAST(value AS STRING) as json")
+      .selectExpr("CAST(value AS STRING) as json", "partition", "offset")
       .selectExpr(
         "from_json(json, 'struct<xid:string,csn:string,tx_ts:string," +
-          "event_count:int,data_collections:array<struct<data_collection:string,event_count:int>>>') as data")
+          "event_count:int,data_collections:array<struct<data_collection:string,event_count:int>>>') as data",
+        "partition",
+        "offset")
       .select(
         col("data.xid").as("xid"),
         col("data.csn").as("csn"),
@@ -130,95 +136,7 @@ object TransactionalCdcProcessingApp extends App with Logging {
         lit(null).cast("map<string,string>").as("after"),
         lit("METADATA").as("event_type"),
         col("data.event_count").as("expected_count"),
-        col("data.data_collections").as("data_collections"))
-
-  /**
-   * Stateful processor that buffers CDC events per transaction and emits when complete.
-   */
-  private def processTransaction(
-      txKey: String,
-      events: Iterator[Row],
-      state: GroupState[TransactionState]): Iterator[OrderStream] = {
-
-    // Get or create transaction state
-    val txState = if (state.exists) state.get else new TransactionState()
-
-    // Parse transaction key
-    val parts = txKey.split(":")
-    if (parts.length == 2) {
-      txState.xid = parts(0)
-      txState.csn = parts(1)
-    }
-
-    // Process all incoming events in this micro-batch
-    while (events.hasNext) {
-      val row = events.next()
-      val eventType = row.getAs[String]("event_type")
-
-      if ("METADATA" == eventType) {
-        // Transaction metadata event - set expected counts
-        val metadata = new TransactionMetadata()
-        metadata.xid = row.getAs[String]("xid")
-        metadata.eventCount = row.getAs[Int]("expected_count")
-
-        // Parse data collections
-        val dcRows = row.getList[Row](row.fieldIndex("data_collections"))
-        if (dcRows != null) {
-          val dataCollections = mutable.ListBuffer[DataCollectionCount]()
-          dcRows.asScala.foreach { dcRow =>
-            dataCollections += new DataCollectionCount(
-              dcRow.getAs[String]("data_collection"),
-              dcRow.getAs[Int]("event_count"))
-          }
-          metadata.dataCollections = dataCollections.asJava
-        }
-
-        txState.setMetadata(metadata)
-      } else {
-        // CDC event - add to buffer
-        val cdcEvent = new DataChangeEvent()
-        cdcEvent.table = row.getAs[String]("table")
-        cdcEvent.opType = row.getAs[String]("op_type")
-        cdcEvent.opTs = row.getAs[String]("op_ts")
-        cdcEvent.currentTs = row.getAs[String]("current_ts")
-        cdcEvent.pos = row.getAs[String]("pos")
-        cdcEvent.csn = row.getAs[String]("csn")
-        cdcEvent.xid = row.getAs[String]("xid")
-
-        // Convert Spark scala.collection.Map to java.util.Map
-        val beforeMap = row.getAs[scala.collection.Map[String, String]]("before")
-        val afterMap = row.getAs[scala.collection.Map[String, String]]("after")
-
-        if (beforeMap != null) {
-          cdcEvent.before = beforeMap.asJava
-        }
-        if (afterMap != null) {
-          cdcEvent.after = afterMap.asJava
-        }
-
-        txState.addEvent(cdcEvent)
-      }
-    }
-
-    // Check if transaction is complete
-    if (txState.isComplete) {
-      logger.info(s"Transaction $txKey is complete. Progress: ${txState.progress}")
-
-      // Join all events and create denormalized records
-      val results = OrderJoiner.joinTransaction(txState)
-
-      // Remove state after emitting
-      state.remove()
-
-      results.iterator
-    } else {
-      // Transaction not complete yet - update state and return empty iterator
-      if (txState.getMetadata != null) {
-        logger.info(s"Transaction $txKey buffering. Progress: ${txState.progress}")
-      }
-
-      state.update(txState)
-      Iterator.empty
-    }
-  }
+        col("data.data_collections").as("data_collections"),
+        col("partition").as("marker_partition"),
+        col("offset").as("marker_offset"))
 }
