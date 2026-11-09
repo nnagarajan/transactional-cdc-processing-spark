@@ -34,11 +34,14 @@ Current state table with flattened order attributes, single orderDetails struct 
 
 - **create_table.deltalake.sql** - Creates the order_stream Delta Lake table
 - **create_scd1_table.deltalake.sql** - Creates the orders_current (SCD Type 1) table
+- **create_dropped_events_table.deltalake.sql** - Creates the dropped_events audit table (one row per discarded input, with the reason). It has no `DROP TABLE`, so re-seeding keeps the audit history
+- **truncate_tables.sql** - Empties order_stream, orders_current and dropped_events (`DELETE FROM`, definitions kept). Use it through `scripts/reset-pipeline.sh`, which also deletes both checkpoints so the pipeline reprocesses from the start
 - **query_table.sql** - Sample queries for the SCD Type 2 table
 - **query_scd1_table.sql** - Sample queries for the SCD Type 1 table
 - **table_maintenance.sql** - Maintenance operations (vacuum, optimize, etc.)
 - **schema_evolution.sql** - Examples of schema evolution operations
 - **oracle-ddl.sql** - Oracle source table DDL
+- **simulate-grouped-markers.sql** - Oracle script that reproduces the grouped-delivery marker bug (`GROUPTRANSOPS 1000`, several CSNs in one Replicat transaction); steps are in its header
 - **views.sql** - Temporary views over both tables (not run by SeedJob; the Unity Catalog Spark connector has no view support before Spark 4.2)
 
 ## Usage

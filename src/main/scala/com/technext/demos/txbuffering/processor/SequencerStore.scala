@@ -23,6 +23,8 @@ trait SequencerStore {
   def getBuffer(txKey: String): Option[TransactionState]
   def putBuffer(txKey: String, state: TransactionState): Unit
   def removeBuffer(txKey: String): Unit
+  /** Keys (`xid:csn`) of every buffered transaction. */
+  def bufferKeys: Iterator[String]
 
   def queueGet(seq: Long): Option[String]
   def queuePut(seq: Long, txKey: String): Unit

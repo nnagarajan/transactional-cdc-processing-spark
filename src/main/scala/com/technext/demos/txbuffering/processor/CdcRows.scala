@@ -12,18 +12,38 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.spark.sql.Row
 
-import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, DataCollectionCount, TransactionMetadata}
+import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, DataCollectionCount, KafkaSource, TransactionMetadata}
 
 /** Converts rows of the unioned CDC stream into model objects and sequencer inputs. */
 object CdcRows {
 
   val MetadataEventType = "METADATA"
+  /** Event type CdcJsonParsing gives a message that could not be used (no xid/csn, or not JSON). */
+  val RawDropEventType = "RAW_DROP"
 
   def toSequencerInput(row: Row): SequencerInput =
-    if (MetadataEventType == row.getAs[String]("event_type"))
+    if (RawDropEventType == row.getAs[String]("event_type"))
+      RawDropInput(optional[String](row, "drop_reason"), optional[String](row, "raw_value"),
+        row.getAs[String]("xid"), row.getAs[String]("csn"), source(row))
+    else if (MetadataEventType == row.getAs[String]("event_type"))
       MarkerInput(toMetadata(row), row.getAs[Int]("marker_partition"), row.getAs[Long]("marker_offset"),
-        markerIndex(row))
-    else DataInput(toDataChangeEvent(row))
+        markerIndex(row), optional[String](row, "source_topic"))
+    else DataInput(toDataChangeEvent(row), source(row))
+
+  /** Where the row was read from; fields are null when the row has no source columns. */
+  def source(row: Row): KafkaSource =
+    KafkaSource(
+      optional[String](row, "source_topic"),
+      optional[Integer](row, "source_partition"),
+      optional[java.lang.Long](row, "source_offset"),
+      optional[Integer](row, "marker_index"))
+
+  /** A column's value, or null when the column is absent or null. */
+  private def optional[T](row: Row, name: String): T = {
+    if (!row.schema.fieldNames.contains(name)) return null.asInstanceOf[T]
+    val i = row.fieldIndex(name)
+    if (row.isNullAt(i)) null.asInstanceOf[T] else row.get(i).asInstanceOf[T]
+  }
 
   /** Position of the marker within its Kafka message; 0 when the row has no `marker_index`. */
   private def markerIndex(row: Row): Int = {

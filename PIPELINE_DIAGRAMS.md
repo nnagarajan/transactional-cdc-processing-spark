@@ -63,6 +63,9 @@ flowchart TD
 
     %% Output
     JOIN --> DL1[("argus1.order_stream<br/>SCD Type 2<br/>UC managed Delta table")]
+    DDROP --> DL0[("argus1.dropped_events<br/>one row per dropped input<br/>with reason")]
+    DDROP2 --> DL0
+    MDROP --> DL0
 
     %% Timer and checkpoint
     TMR["Processing-time timer<br/>job.ordering.check-interval"] -.-> WALK
@@ -80,7 +83,7 @@ flowchart TD
     class SR1,SR2,SR3,SR4,U,G,SP,ENQ,BUF,JOIN,REC,BLK,TMR process
     class RS,CP1 state
     class F,IN,PART,MREP,DREP,DUP,WALK decision
-    class DL1 output
+    class DL1,DL0 output
     class D1,MDROP,DDROP,DDROP2 skip
     class FAIL fail
 ```
@@ -102,6 +105,7 @@ flowchart TD
 | **OrderJoiner** | Denormalize a complete transaction into `OrderStream` records |
 | **Trigger** | `Trigger.ProcessingTime(job.ordering.trigger-interval)`. In processing-time mode `transformWithState` would otherwise run empty batches back to back |
 | **Output** | `argus1.order_stream`, a UC managed Delta table. Commits go through the Unity Catalog server |
+| **Dropped events** | Every discarded input (replays, duplicates, unknown tables, purged buffers, unusable messages) goes to `argus1.dropped_events` with its reason. A `foreachBatch` writes orders first, then drops, both idempotent per batch id |
 
 ### Out-of-Order Completion
 
@@ -393,6 +397,7 @@ flowchart TD
 - **Head-of-line blocking:** a transaction that never completes (lost event or marker) halts all
   output until someone intervenes. It's logged as an error, never skipped.
 - **No scale-out:** the sequencer runs as a single task on one global key.
-- **Unbounded orphan buffers:** data events whose marker never arrives stay buffered. They can't
-  block output, but they consume state (no TTL).
+- **Orphan buffers until the cursor passes them:** data events whose marker never arrives stay
+  buffered until a transaction with a higher CSN is emitted, then they're removed. They can't
+  block output.
 - **Single-partition metadata topic:** markers must arrive in commit order on one partition.

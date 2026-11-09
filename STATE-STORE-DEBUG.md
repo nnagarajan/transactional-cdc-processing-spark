@@ -154,8 +154,31 @@ ORDER BY txn;
 ```
 
 - `has_marker = false`: data events arrived, but the transaction's marker hasn't. These rows can't
-  block output, but they stay in state until the marker arrives.
+  block output. They stay in state until the marker arrives, or until a transaction with a higher
+  CSN is emitted, when the sequencer removes them (see below).
 - `complete` is the value of `TransactionState.isComplete` when the state was last written.
+
+### Buffers the sequencer will remove
+
+Buffers whose CSN is below `cursor.lastEmittedCsn` can never be emitted: a queued transaction
+never has a CSN below it, and any marker for them would be dropped as a replay. The sequencer
+removes them each time the cursor advances, at most 100,000 per step, and logs
+`Removed <n> buffered transaction(s) without a marker below CSN <csn>`. After a start from
+`earliest` with pre-marker history, this count shows how much is left to remove:
+
+```sql
+SELECT count(*)                                                             AS removable,
+       min(CAST(substring_index(user_map_key.value, ':', -1) AS DECIMAL(38,0))) AS lowest_csn
+FROM seq_buffers
+WHERE CAST(substring_index(user_map_key.value, ':', -1) AS DECIMAL(38,0))
+      < (SELECT CAST(value.lastEmittedCsn AS DECIMAL(38,0)) FROM seq_cursor);
+```
+
+Use the scalar subquery as written. Joining `seq_buffers` to `seq_cursor` instead fails with
+`CANNOT_LOAD_STATE_STORE`, because the join reopens the same state stores concurrently.
+
+It stays above 0 between steps while more than 100,000 remain, and when no transaction has been
+emitted since the buffers were written.
 
 ### Which transaction is blocking output
 

@@ -88,7 +88,7 @@ Prerequisites: a running Unity Catalog server with catalog `mymanaged` and schem
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
   --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0,com.typesafe:config:1.4.3,org.apache.logging.log4j:log4j-api-scala_2.13:13.1.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   --conf spark.sql.catalog.mymanaged=io.unitycatalog.spark.UCSingleCatalog \
@@ -98,6 +98,9 @@ spark-submit \
   --conf spark.sql.defaultCatalog=mymanaged \
   target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar
 ```
+
+The jar doesn't bundle its own dependencies: `com.typesafe:config` and `log4j-api-scala` have to
+be in `--packages` as well, or the app fails at startup with `NoClassDefFoundError`.
 
 Run from the IDE or with plain `java`, and `SparkSessionCreator` applies these settings from
 `reference.conf` automatically.
@@ -112,7 +115,7 @@ spark-submit \
   --executor-cores 2 \
   --executor-memory 4G \
   --driver-memory 2G \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0,com.typesafe:config:1.4.3,org.apache.logging.log4j:log4j-api-scala_2.13:13.1.0 \
   --conf spark.sql.streaming.stateStore.providerClass=org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider \
   --conf spark.sql.catalog.mymanaged=io.unitycatalog.spark.UCSingleCatalog \
   --conf spark.sql.catalog.mymanaged.uri=<uc-server-url> \
@@ -134,6 +137,12 @@ The sequencer runs as a single task, so extra executors don't speed up transacti
 | `job.ordering.blocked-alert-threshold` | `10 minutes` | Log an error once the head transaction has been blocked this long |
 | `job.ordering.check-interval` | `1 minute` | Processing-time timer, so the blocked check runs with no input |
 | `job.ordering.trigger-interval` | `10 seconds` | Micro-batch trigger |
+| `kafka.starting-offsets` | `earliest` | Starting position for every Kafka source, on a new checkpoint only |
+| `job.kafka.starting-offsets.<topic-key>` | unset | Per-topic override: `earliest`, `latest`, or a partition map such as `{"0":12345}` (see the go-live runbook in `gg-configs/README.md`) |
+| `job.kafka.max-offsets-per-trigger` | `50000` | Most offsets each Kafka source reads per micro-batch; `none` removes the limit |
+| `job.output.dropped-events.enabled` | `true` | Write a row per discarded input to the dropped-events table; `false` only logs drops, and the table need not exist |
+| `job.output.dropped-events.table-name` | `argus1.dropped_events` | Dropped-events table |
+| `job.output.dropped-events.replay-detail` | `full` | `full`: one row per replayed event or marker. `summary`: one row per replayed transaction, with `droppedCount` |
 
 ## How It Works
 
@@ -216,6 +225,56 @@ the records are written to `argus1.order_stream`:
 Within a transaction, events aren't sorted by `pos`. Ordering is guaranteed between transactions,
 not between the events of one transaction.
 
+### 6. Dropped Events
+
+Every input the pipeline discards becomes a row in `argus1.dropped_events`
+(`db/create_dropped_events_table.deltalake.sql`, partitioned by `droppedDate`). The sequencer
+returns its drops next to the emitted transactions, and the stateful operator outputs both in one
+envelope (`SequencerOutput`). Messages that can't be used are marked `RAW_DROP` by
+`CdcJsonParsing` and passed through the sequencer, which records them without touching state.
+
+| `reason` | `itemKind` | Cause |
+|---|---|---|
+| `REPLAY_BELOW_CURSOR` | `DATA_EVENT`, `MARKER` | CSN below the last emitted CSN |
+| `REPLAY_ALREADY_EMITTED` | `DATA_EVENT`, `MARKER` | CSN equal to the last emitted CSN, xid already emitted |
+| `DUPLICATE_MARKER` | `MARKER` | The transaction already has a marker |
+| `DUPLICATE_EVENT` | `DATA_EVENT` | Same `pos` already buffered |
+| `UNKNOWN_TABLE` | `DATA_EVENT` | Table other than ORDERS, ORDER_DETAILS, ORDER_LINE_ITEMS |
+| `NO_MARKER_BELOW_CURSOR` | `PURGED_BUFFER` | Buffer without a marker removed once the cursor passed its CSN; one row per transaction with `bufferedOrders`, `bufferedDetails`, `bufferedLineItems` |
+| `MISSING_IDS` | `RAW_MESSAGE` | Valid JSON without `xid` or `csn` (`rawValue` holds the message, or the one marker) |
+| `UNPARSEABLE` | `RAW_MESSAGE` | Not valid JSON (`rawValue` holds the message) |
+
+Every row has `lastEmittedCsn` (the cursor at the time), `batchId`, `droppedTs`, and the Kafka
+`kafkaTopic`/`kafkaPartition`/`kafkaOffset` (plus `markerIndex` for markers).
+
+The sink is a `foreachBatch` that appends orders to `order_stream`, then drops to
+`dropped_events`. Both writes use Delta's `txnAppId` (`<query id>-<table>`, with the query id read
+from `<checkpoint>/metadata`) and `txnVersion = batchId`, so a retried batch writes nothing twice.
+If the dropped-events write fails, the batch fails and is retried: output stops until the table is
+healthy again, or until `job.output.dropped-events.enabled = false`.
+
+Example queries:
+
+```sql
+-- Everything dropped for one transaction
+SELECT droppedTs, itemKind, reason, droppedCount, lastEmittedCsn, kafkaTopic, kafkaOffset, tableName, pos
+FROM mymanaged.argus1.dropped_events
+WHERE xid = '1342848513.8.14.5716' AND csn = '344374437'
+ORDER BY droppedTs, kafkaTopic, kafkaOffset;
+
+-- Drops per reason per day
+SELECT droppedDate, reason, itemKind, sum(droppedCount) AS items, count(*) AS rows
+FROM mymanaged.argus1.dropped_events
+GROUP BY droppedDate, reason, itemKind
+ORDER BY droppedDate DESC, items DESC;
+
+-- Messages that could not be parsed, with where to find them in Kafka
+SELECT droppedTs, reason, kafkaTopic, kafkaPartition, kafkaOffset, markerIndex, rawValue
+FROM mymanaged.argus1.dropped_events
+WHERE itemKind = 'RAW_MESSAGE'
+ORDER BY droppedTs DESC;
+```
+
 ## State Management
 
 ### State Variables
@@ -277,8 +336,10 @@ The marker contract is tested on both sides: the formatter's output in
 1. **Head-of-line blocking:** a transaction that never completes (lost event or marker) halts all
    output until someone intervenes. It's alerted on, never skipped.
 2. **No scale-out:** transaction assembly runs as a single task on one global key.
-3. **Orphan buffers:** data events whose marker never arrives stay buffered indefinitely (no TTL).
-   They can't block output, but they consume state.
+3. **Orphan buffers:** data events whose marker never arrives stay buffered until a transaction
+   with a higher CSN is emitted. Then they're removed, since any marker for them would be dropped
+   as a replay (at most 100,000 per step, logged at INFO). They can't block output. There is no
+   time-based TTL, which would also remove a slow in-flight transaction.
 4. **Single-partition metadata topic:** markers must arrive in commit (CSN-nondecreasing) order.
 5. **Checkpoint compatibility:** the state layout is incompatible with pre-ordering checkpoints.
 6. **Unity Catalog dependency:** writes to managed tables commit through the UC server, so the
@@ -289,8 +350,12 @@ The marker contract is tested on both sides: the formatter's output in
 
 | Test | Count | Covers |
 |---|---|---|
-| `TransactionStateTest` | 8 | Dedup on `pos`, exact completeness, overfill |
-| `TransactionSequencerTest` | 17 | Ordering, blocking, replay drops, same-CSN transactions, partition check, alerting |
+| `TransactionStateTest` | 9 | Dedup on `pos`, exact completeness, overfill |
+| `TransactionSequencerTest` | 34 | Ordering, blocking, replay drops, same-CSN transactions, partition check, alerting, orphan-buffer removal, drop records per reason, summary mode |
+| `KafkaSourceOptionsTest` | 9 | Per-topic starting positions, validation, per-batch limit |
+| `CdcJsonParsingTest` | 8 | Single-object and array marker messages, Kafka coordinates, unparseable and id-less messages |
+| `CdcOutputSinkTest` | 5 | Two-table sink, idempotent retries, disabled mode, per-checkpoint `txnAppId` |
+| `SequencerOutputEncodingTest` | 2 | Bean schemas match the dropped-events table |
 | `OrderJoinerTest` | 1 | Denormalization |
 | `TransactionOrderingProcessorIntegrationTest` | 3 | End to end through `transformWithState` with `MemoryStream` |
 | `ScdType1MergerTest` | 4 | Placeholders, CSN guard, tie-breaking, on Delta |

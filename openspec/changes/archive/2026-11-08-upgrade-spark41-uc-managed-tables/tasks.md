@@ -27,7 +27,7 @@
 - [x] 4.2 Write `STATE-STORE-DEBUG.md`: the `statestore` data source, the `spark.streams` workaround, `file://` paths in Zeppelin, and queries for `cursor`/`queue`/`buffers` and the blocking head; verify every SQL statement in the file runs against a copy of `/tmp/spark-checkpoints-ordered`
 - [x] 4.3 Rewrite `PIPELINE_DIAGRAMS.md` and `IMPLEMENTATION.md` for the sequencer, managed tables and the new versions; verify `grep` finds no `mycatalog` or Spark 4.0 coordinates in either file, and `flatMapGroupsWithState` appears only as the earlier version in the checkpoint note
 - [ ] 4.4 Render-check the Mermaid diagrams in `PIPELINE_DIAGRAMS.md` (Markdown preview or `mmdc`); verify all six diagrams render without a parse error
-- [ ] 4.5 Update the "Running" section of `CLAUDE.md`, which still shows positional arguments the app ignores; verify the command matches `IMPLEMENTATION.md`
+- [x] 4.5 Update the "Running" section of `CLAUDE.md`, which still shows positional arguments the app ignores; verify the command matches `IMPLEMENTATION.md`
 
 ## 5. Integration
 

@@ -9,8 +9,10 @@ package com.technext.demos.txbuffering.processor
 
 import org.apache.logging.log4j.scala.Logger
 import org.apache.spark.sql.{Dataset, Encoder, Encoders, Row}
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.streaming.{ExpiredTimerInfo, MapState, OutputMode, StatefulProcessor, TimeMode, TimerValues, TTLConfig, ValueState}
 
+import com.technext.demos.txbuffering.model.generic.DroppedEvent
 import com.technext.demos.txbuffering.model.order.OrderStream
 
 /**
@@ -23,8 +25,8 @@ import com.technext.demos.txbuffering.model.order.OrderStream
  * A single processing-time timer is kept registered while transactions are queued, so a
  * blocked head is re-checked and alerted on even when no new input arrives.
  */
-class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalMs: Long)
-    extends StatefulProcessor[String, Row, OrderStream] {
+class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalMs: Long,
+    summarizeReplays: Boolean = false) extends StatefulProcessor[String, Row, SequencerOutput] {
 
   @transient private var buffers: MapState[String, TransactionState] = _
   @transient private var queue: MapState[Long, String] = _
@@ -37,23 +39,24 @@ class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalM
     cursor = handle.getValueState("cursor", Encoders.bean(classOf[Cursor]), TTLConfig.NONE)
   }
 
-  override def handleInputRows(key: String, rows: Iterator[Row], timerValues: TimerValues): Iterator[OrderStream] =
+  override def handleInputRows(key: String, rows: Iterator[Row], timerValues: TimerValues): Iterator[SequencerOutput] =
     step(timerValues, expiredTimerMs = -1L)(_.process(rows.map(CdcRows.toSequencerInput)))
 
-  override def handleExpiredTimer(key: String, timerValues: TimerValues, expiredTimerInfo: ExpiredTimerInfo): Iterator[OrderStream] =
+  override def handleExpiredTimer(key: String, timerValues: TimerValues, expiredTimerInfo: ExpiredTimerInfo): Iterator[SequencerOutput] =
     step(timerValues, expiredTimerInfo.getExpiryTimeInMs())(_.onTimer())
 
   private def step(timerValues: TimerValues, expiredTimerMs: Long)(
-      run: TransactionSequencer => SequencerResult): Iterator[OrderStream] = {
+      run: TransactionSequencer => SequencerResult): Iterator[SequencerOutput] = {
     val now = timerValues.getCurrentProcessingTimeInMs()
     val store = new StateHandleStore
-    val result = run(new TransactionSequencer(store, blockedAlertThresholdMs, () => now))
+    val result = run(new TransactionSequencer(store, blockedAlertThresholdMs, () => now, summarizeReplays))
 
     result.emitted.foreach(s =>
       TransactionOrderingProcessor.log.info(s"Emitting transaction ${s.xid}:${s.csn}. Progress: ${s.progress}"))
 
     rescheduleTimer(store.getCursor, store, now, expiredTimerMs)
-    result.emitted.iterator.flatMap(OrderJoiner.joinTransaction)
+    result.emitted.iterator.flatMap(OrderJoiner.joinTransaction).map(SequencerOutput.ofOrder) ++
+      result.dropped.iterator.map(SequencerOutput.ofDropped)
   }
 
   /** Keeps exactly one timer registered while the queue is non-empty, none otherwise. */
@@ -72,6 +75,7 @@ class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalM
       if (buffers.containsKey(txKey)) Some(buffers.getValue(txKey)) else None
     override def putBuffer(txKey: String, state: TransactionState): Unit = buffers.updateValue(txKey, state)
     override def removeBuffer(txKey: String): Unit = buffers.removeKey(txKey)
+    override def bufferKeys: Iterator[String] = buffers.keys()
 
     override def queueGet(seq: Long): Option[String] =
       if (queue.containsKey(seq)) Some(queue.getValue(seq)) else None
@@ -97,11 +101,12 @@ object TransactionOrderingProcessor {
    * Also sets the RocksDB state store provider, which transformWithState requires,
    * so it holds on the spark-submit path as well as the dev path.
    */
-  def orderTransactions(allEvents: Dataset[Row], blockedAlertThresholdMs: Long, checkIntervalMs: Long): Dataset[OrderStream] = {
+  def orderTransactions(allEvents: Dataset[Row], blockedAlertThresholdMs: Long, checkIntervalMs: Long,
+      summarizeReplays: Boolean = false): Dataset[SequencerOutput] = {
     allEvents.sparkSession.conf.set("spark.sql.streaming.stateStore.providerClass", RocksDbProvider)
 
     implicit val keyEncoder: Encoder[String] = Encoders.STRING
-    implicit val outputEncoder: Encoder[OrderStream] = Encoders.bean(classOf[OrderStream])
+    implicit val outputEncoder: Encoder[SequencerOutput] = Encoders.bean(classOf[SequencerOutput])
 
     // Spark 4.0 exposes the Scala transformWithState API only on the classic (non-Connect)
     // implementation; the base KeyValueGroupedDataset declares it private[sql].
@@ -114,8 +119,18 @@ object TransactionOrderingProcessor {
     }
     grouped
       .transformWithState(
-        new TransactionOrderingProcessor(blockedAlertThresholdMs, checkIntervalMs),
+        new TransactionOrderingProcessor(blockedAlertThresholdMs, checkIntervalMs, summarizeReplays),
         TimeMode.ProcessingTime(),
         OutputMode.Append())
   }
+
+  /** The emitted order records of a sequencer output (streaming or batch). */
+  def ordersOf(output: Dataset[SequencerOutput]): Dataset[OrderStream] =
+    output.filter(col("kind") === SequencerOutput.OrderKind).select("order.*")
+      .as(Encoders.bean(classOf[OrderStream]))
+
+  /** The drop records of a sequencer output (streaming or batch). */
+  def droppedOf(output: Dataset[SequencerOutput]): Dataset[DroppedEvent] =
+    output.filter(col("kind") === SequencerOutput.DroppedKind).select("dropped.*")
+      .as(Encoders.bean(classOf[DroppedEvent]))
 }

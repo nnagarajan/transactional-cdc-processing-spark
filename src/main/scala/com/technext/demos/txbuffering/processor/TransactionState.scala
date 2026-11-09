@@ -52,19 +52,20 @@ class TransactionState extends Serializable {
    * Buffers an event unless an event with the same GoldenGate trail position (`pos`)
    * is already buffered for the same table. Re-sent events therefore never count twice.
    *
-   * @return true if the event was buffered, false if it was ignored
+   * @return Added if the event was buffered; DuplicatePos or UnknownTable if it was ignored
    */
-  def addEvent(event: DataChangeEvent): Boolean = {
+  def addEvent(event: DataChangeEvent): TransactionState.AddResult = {
     val target = event.tableName match {
       case "ORDERS"           => orderEvents
       case "ORDER_DETAILS"    => orderDetailEvents
       case "ORDER_LINE_ITEMS" => orderLineItemEvents
-      case _                  => null // Unknown table, ignore
+      case _                  => null
     }
-    if (target == null || containsPos(target, event.pos)) false
+    if (target == null) TransactionState.UnknownTable
+    else if (containsPos(target, event.pos)) TransactionState.DuplicatePos
     else {
       target.add(event)
-      true
+      TransactionState.Added
     }
   }
 
@@ -101,4 +102,10 @@ class TransactionState extends Serializable {
 
 object TransactionState {
   private val log: Logger = Logger(classOf[TransactionState])
+
+  /** Outcome of [[TransactionState.addEvent]]. */
+  sealed trait AddResult
+  case object Added extends AddResult
+  case object DuplicatePos extends AddResult
+  case object UnknownTable extends AddResult
 }

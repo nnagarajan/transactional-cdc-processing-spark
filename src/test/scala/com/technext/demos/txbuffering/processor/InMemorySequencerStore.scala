@@ -11,6 +11,7 @@ class InMemorySequencerStore extends SequencerStore {
   override def getBuffer(txKey: String): Option[TransactionState] = buffers.get(txKey)
   override def putBuffer(txKey: String, state: TransactionState): Unit = buffers(txKey) = state
   override def removeBuffer(txKey: String): Unit = buffers.remove(txKey)
+  override def bufferKeys: Iterator[String] = buffers.keys.toList.iterator
 
   override def queueGet(seq: Long): Option[String] = queue.get(seq)
   override def queuePut(seq: Long, txKey: String): Unit = queue(seq) = txKey

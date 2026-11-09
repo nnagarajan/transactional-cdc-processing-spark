@@ -85,7 +85,8 @@ class TransactionOrderingProcessorIntegrationTest {
   }
 
   private def start(input: MemoryStream[TestCdcRow], checkpoint: String): StreamingQuery = {
-    val ordered = TransactionOrderingProcessor.orderTransactions(input.toDF(), 10 * 60 * 1000L, 60 * 1000L)
+    val ordered = TransactionOrderingProcessor.ordersOf(
+      TransactionOrderingProcessor.orderTransactions(input.toDF(), 10 * 60 * 1000L, 60 * 1000L))
     val collect: (Dataset[OrderStream], Long) => Unit = (ds, batchId) => {
       val keys = ds.collect().toSeq.map(o => s"${o.xid}:${o.csn}")
       if (keys.nonEmpty) CollectedBatches.batches.add((batchId, keys))

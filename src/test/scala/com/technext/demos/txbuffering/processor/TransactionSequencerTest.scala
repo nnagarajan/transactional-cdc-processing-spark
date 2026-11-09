@@ -4,6 +4,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
+import com.technext.demos.txbuffering.model.generic.{DroppedEvent, KafkaSource}
+import com.technext.demos.txbuffering.model.generic.DroppedEvent.{ItemKind, Reason}
 import com.technext.demos.txbuffering.processor.Fixtures._
 
 class TransactionSequencerTest {
@@ -210,5 +212,205 @@ class TransactionSequencerTest {
 
     nowMs += 1000L
     assertThat(seq.onTimer().alert.isEmpty).isTrue
+  }
+
+  // ---- orphan-buffer purge (buffer-retention) ----
+
+  @Test
+  def historyWithoutMarkersIsRemovedOnceTheCursorPassesIt(): Unit = {
+    run((100 until 1100).map(c => li(s"h$c", c.toString, "p1")): _*)
+    assertThat(store.buffers.size).isEqualTo(1000)
+
+    assertThat(keys(run(mk("t", "2000", 0))).toArray).containsExactly("t:2000")
+    assertThat(store.buffers.isEmpty).isTrue
+  }
+
+  @Test
+  def dataAheadOfItsMarkerIsKept(): Unit = {
+    run(li("f", "600", "p1"), mk("e", "500", 0))
+    assertThat(store.buffers.contains("f:600")).isTrue
+
+    assertThat(keys(run(mk("f", "600", 1))).toArray).containsExactly("f:600")
+  }
+
+  @Test
+  def bufferAtTheLastEmittedCsnIsKept(): Unit = {
+    run(li("b", "500", "p1"), mk("a", "500", 0))
+    assertThat(store.buffers.contains("b:500")).isTrue
+
+    assertThat(keys(run(mk("b", "500", 1))).toArray).containsExactly("b:500")
+  }
+
+  @Test
+  def nothingIsRemovedBeforeTheFirstEmission(): Unit = {
+    run(li("a", "100", "p1"), li("b", "50", "p1"), mk("h", "200", 1))
+
+    assertThat(store.buffers.keySet.toArray).containsExactlyInAnyOrder("a:100", "b:50", "h:200")
+  }
+
+  @Test
+  def incompleteHeadStaysQueuedWhileALowerOrphanIsRemoved(): Unit = {
+    run(li("o", "300", "p1"))
+
+    run(mk("e", "500", 0), mk("h", "700", 1), mk("z", "800", 0))
+
+    assertThat(store.buffers.contains("o:300")).isFalse
+    assertThat(store.buffers.keySet.toArray).containsExactlyInAnyOrder("h:700", "z:800")
+    assertThat(store.getCursor.queueDepth).isEqualTo(2L)
+    assertThat(run().emitted.isEmpty).isTrue
+  }
+
+  @Test
+  def largeHistoryIsRemovedOverSeveralSteps(): Unit = {
+    val total = TransactionSequencer.MaxPurgePerStep + 5000
+    (0 until total).foreach { i =>
+      val s = new TransactionState()
+      s.xid = s"h$i"
+      s.csn = i.toString
+      store.buffers(s"h$i:$i") = s
+    }
+
+    run(mk("t1", "1000000", 0))
+    assertThat(store.buffers.size).isEqualTo(5000)
+
+    run(mk("t2", "1000001", 0))
+    assertThat(store.buffers.isEmpty).isTrue
+  }
+
+  // ---- drop records (dropped-event-audit) ----
+
+  private def only(r: SequencerResult): DroppedEvent = {
+    assertThat(r.dropped.size).isEqualTo(1)
+    r.dropped.head
+  }
+
+  @Test
+  def replayedEventBelowTheCursorIsRecorded(): Unit = {
+    run(mk("e", "500", 0))
+    val src = KafkaSource("dev.appuser.order_line_items.json", 0, 371L)
+
+    val d = only(run(DataInput(lineItem("a", "400", "p1", lineItemId = 1), src)))
+
+    assertThat(d.itemKind).isEqualTo(ItemKind.DataEvent)
+    assertThat(d.reason).isEqualTo(Reason.ReplayBelowCursor)
+    assertThat(d.xid).isEqualTo("a")
+    assertThat(d.csn).isEqualTo("400")
+    assertThat(d.lastEmittedCsn).isEqualTo("500")
+    assertThat(d.kafkaTopic).isEqualTo("dev.appuser.order_line_items.json")
+    assertThat(d.kafkaOffset).isEqualTo(371L)
+    assertThat(d.tableName).isEqualTo("ORDER_LINE_ITEMS")
+  }
+
+  @Test
+  def replayedEventAtTheCursorForAnEmittedTransactionIsRecorded(): Unit = {
+    run(mk("a", "500", 1), li("a", "500", "p1"))
+
+    val d = only(run(li("a", "500", "p1")))
+
+    assertThat(d.reason).isEqualTo(Reason.ReplayAlreadyEmitted)
+    assertThat(d.lastEmittedCsn).isEqualTo("500")
+  }
+
+  @Test
+  def replayedMarkerIsRecordedWithItsSource(): Unit = {
+    run(mk("e", "500", 0))
+
+    val d = only(run(MarkerInput(marker("a", "400", lineItems = 2), 0, 7L, 1, "dev.transaction_metadata_json")))
+
+    assertThat(d.itemKind).isEqualTo(ItemKind.Marker)
+    assertThat(d.reason).isEqualTo(Reason.ReplayBelowCursor)
+    assertThat(d.kafkaOffset).isEqualTo(7L)
+    assertThat(d.markerIndex).isEqualTo(1)
+    assertThat(d.markerEventCount).isEqualTo(2)
+  }
+
+  @Test
+  def duplicateMarkerIsRecordedWithItsCounts(): Unit = {
+    run(mk("a", "100", 2))
+
+    val d = only(run(mk("a", "100", 2)))
+
+    assertThat(d.itemKind).isEqualTo(ItemKind.Marker)
+    assertThat(d.reason).isEqualTo(Reason.DuplicateMarker)
+    assertThat(d.markerEventCount).isEqualTo(2)
+    assertThat(d.dataCollections.size).isGreaterThan(0)
+  }
+
+  @Test
+  def duplicateEventIsRecorded(): Unit = {
+    run(li("a", "100", "p1"))
+
+    assertThat(only(run(li("a", "100", "p1"))).reason).isEqualTo(Reason.DuplicateEvent)
+  }
+
+  @Test
+  def eventForAnUntrackedTableIsRecorded(): Unit = {
+    val d = only(run(DataInput(event("a", "100", "CUSTOMERS", "p1"))))
+
+    assertThat(d.reason).isEqualTo(Reason.UnknownTable)
+    assertThat(d.tableName).isEqualTo("CUSTOMERS")
+  }
+
+  @Test
+  def purgedBufferIsOneSummaryRowWithCounts(): Unit = {
+    run(DataInput(order("h", "100", "p1")), DataInput(event("h", "100", "ORDER_DETAILS", "p2")),
+      li("h", "100", "p3"), li("h", "100", "p4"), li("h", "100", "p5"))
+
+    val d = only(run(mk("t", "200", 0)))
+
+    assertThat(d.itemKind).isEqualTo(ItemKind.PurgedBuffer)
+    assertThat(d.reason).isEqualTo(Reason.NoMarkerBelowCursor)
+    assertThat(d.xid).isEqualTo("h")
+    assertThat(d.csn).isEqualTo("100")
+    assertThat(d.bufferedOrders).isEqualTo(1)
+    assertThat(d.bufferedDetails).isEqualTo(1)
+    assertThat(d.bufferedLineItems).isEqualTo(3)
+    assertThat(d.lastEmittedCsn).isEqualTo("200")
+  }
+
+  @Test
+  def acceptedInputProducesNoDropRecords(): Unit = {
+    val r = run(mk("a", "100", 1), li("a", "100", "p1"))
+
+    assertThat(keys(r).toArray).containsExactly("a:100")
+    assertThat(r.dropped.isEmpty).isTrue
+  }
+
+  @Test
+  def summaryModeFoldsReplaysOfOneTransaction(): Unit = {
+    val summarizing = new TransactionSequencer(store, ThresholdMs, () => nowMs, summarizeReplays = true)
+    summarizing.process(Iterator(mk("e", "500", 0)))
+
+    val inputs = (1 to 350).map(i => li("a", "400", s"p$i")) ++
+      Seq(DataInput(event("b", "600", "CUSTOMERS", "x1")), DataInput(event("b", "600", "CUSTOMERS", "x2")))
+    val r = summarizing.process(inputs.iterator)
+
+    val replay = r.dropped.filter(_.reason == Reason.ReplayBelowCursor)
+    assertThat(replay.size).isEqualTo(1)
+    assertThat(replay.head.droppedCount).isEqualTo(350)
+    assertThat(replay.head.xid).isEqualTo("a")
+    assertThat(replay.head.pos).isNull()
+    assertThat(r.dropped.count(_.reason == Reason.UnknownTable)).isEqualTo(2)
+    assertThat(r.dropped.filter(_.reason == Reason.UnknownTable).map(_.droppedCount).toArray).containsOnly(1)
+  }
+
+  @Test
+  def rawDropIsRecordedAndLeavesStateUnchanged(): Unit = {
+    run(mk("e", "500", 0), li("a", "600", "p1"))
+    val cursorBefore = store.getCursor.lastEmittedCsn
+    val buffersBefore = store.buffers.keySet.toSet
+    val queueBefore = store.queue.toMap
+
+    val src = KafkaSource("dev.transaction_metadata_json", 0, 12L)
+    val d = only(run(RawDropInput(Reason.Unparseable, "{\"xid\":", null, null, src)))
+
+    assertThat(d.itemKind).isEqualTo(ItemKind.RawMessage)
+    assertThat(d.reason).isEqualTo(Reason.Unparseable)
+    assertThat(d.rawValue).isEqualTo("{\"xid\":")
+    assertThat(d.kafkaOffset).isEqualTo(12L)
+    assertThat(d.lastEmittedCsn).isEqualTo("500")
+    assertThat(store.getCursor.lastEmittedCsn).isEqualTo(cursorBefore)
+    assertThat(store.buffers.keySet.toSet == buffersBefore).isTrue
+    assertThat(store.queue.toMap == queueBefore).isTrue
   }
 }

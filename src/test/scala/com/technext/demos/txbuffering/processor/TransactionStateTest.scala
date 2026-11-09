@@ -11,15 +11,23 @@ class TransactionStateTest {
   def duplicatePosIsIgnoredAndDoesNotCountTowardCompletion(): Unit = {
     val s = state(marker("x1", "100", lineItems = 3))
 
-    assertThat(s.addEvent(lineItem("x1", "100", "p100", 1))).isTrue
-    assertThat(s.addEvent(lineItem("x1", "100", "p100", 1))).isFalse
-    assertThat(s.addEvent(lineItem("x1", "100", "p101", 2))).isTrue
+    assertThat(s.addEvent(lineItem("x1", "100", "p100", 1))).isEqualTo(TransactionState.Added)
+    assertThat(s.addEvent(lineItem("x1", "100", "p100", 1))).isEqualTo(TransactionState.DuplicatePos)
+    assertThat(s.addEvent(lineItem("x1", "100", "p101", 2))).isEqualTo(TransactionState.Added)
 
     assertThat(s.orderLineItemEvents.size).isEqualTo(2)
     assertThat(s.isComplete).isFalse
 
     s.addEvent(lineItem("x1", "100", "p102", 3))
     assertThat(s.isComplete).isTrue
+  }
+
+  @Test
+  def eventForAnUntrackedTableIsIgnored(): Unit = {
+    val s = state(marker("x1", "100", lineItems = 1))
+
+    assertThat(s.addEvent(event("x1", "100", "CUSTOMERS", "p1"))).isEqualTo(TransactionState.UnknownTable)
+    assertThat(s.orderEvents.size + s.orderDetailEvents.size + s.orderLineItemEvents.size).isEqualTo(0)
   }
 
   @Test
