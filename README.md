@@ -228,6 +228,7 @@ spark-sql \
 - **[IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed architecture, configuration options, and troubleshooting guide
 - **[SCD_TYPE1_README.md](docs/SCD_TYPE1_README.md)** - SCD Type 1 merge application documentation
 - **[oracle-schema.md](docs/oracle-schema.md)** - Oracle source table schema definitions
+- **[E2E-TESTING.md](docs/E2E-TESTING.md)** - End-to-end suites against the running stack: correctness and ordering, performance, per-order commit latency (`./mvnw -Pe2e verify`)
 
 ## SCD Type 1 Maintenance
 

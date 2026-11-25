@@ -127,6 +127,13 @@
       <artifactId>assertj-core</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Oracle JDBC driver for the end-to-end suites (profile e2e, docs/E2E-TESTING.md) -->
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ojdbc11</artifactId>
+      <version>23.7.0.25.01</version>
+      <scope>test</scope>
+    </dependency>
 
     <dependency>
       <groupId>io.unitycatalog</groupId>
@@ -241,4 +248,32 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- End-to-end suites against the running local stack: ./mvnw -Pe2e verify (docs/E2E-TESTING.md) -->
+    <profile>
+      <id>e2e</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>**/e2e/*IT</include>
+              </includes>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
