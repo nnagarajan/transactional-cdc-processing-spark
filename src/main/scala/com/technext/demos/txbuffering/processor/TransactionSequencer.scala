@@ -59,7 +59,10 @@ final case class SequencerResult(emitted: Seq[TransactionState], alert: Option[B
  *    with an xid already emitted at C.
  *  - A marker for a transaction that already has one is a duplicate and is dropped.
  *  - Accepted markers are queued in Kafka offset order; data events go into their
- *    transaction's buffer, deduplicated on `pos`.
+ *    transaction's buffer, deduplicated on `pos` per table.
+ *  - A buffered transaction is a [[TransactionSummary]] plus one state entry per event, so
+ *    accepting an event, checking completeness and detecting a duplicate cost the same whatever
+ *    the transaction's size. Each event is written once and read once, on emission or removal.
  *  - After each step, transactions are emitted from the queue head while the head is complete.
  *    An incomplete head blocks everything behind it; it is never skipped.
  *  - When C advances, buffers with a CSN below C are removed: they have no marker (a queued
@@ -120,16 +123,16 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
       return
     }
 
-    val existing = store.getBuffer(key)
-    if (existing.exists(_.getMetadata != null)) {
+    val existing = store.getSummary(key)
+    if (existing.exists(_.hasMarker)) {
       logger.info(s"Dropping duplicate marker $key at offset ${m.offset}")
       dropped += DroppedEvent.ofMarker(md, Reason.DuplicateMarker, cursor.lastEmittedCsn, m.source)
       return
     }
 
-    val state = existing.getOrElse(newState(md.xid, md.csn))
-    state.setMetadata(md)
-    store.putBuffer(key, state)
+    val summary = existing.getOrElse(TransactionSummary(md.xid, md.csn))
+    summary.setMetadata(md)
+    store.putSummary(key, summary)
     store.queuePut(cursor.nextSeqToAssign, key)
     cursor.nextSeqToAssign += 1
   }
@@ -142,15 +145,20 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
       return
     }
     val key = TransactionSequencer.txKey(e.xid, e.csn)
-    val state = store.getBuffer(key).getOrElse(newState(e.xid, e.csn))
-    state.addEvent(e) match {
-      case TransactionState.Added => store.putBuffer(key, state)
-      case TransactionState.DuplicatePos =>
-        logger.debug(s"Ignoring duplicate event pos=${e.pos} for $key")
-        dropped += DroppedEvent.ofEvent(e, Reason.DuplicateEvent, cursor.lastEmittedCsn, d.source)
-      case TransactionState.UnknownTable =>
-        logger.debug(s"Ignoring event pos=${e.pos} for $key: table ${e.table} is not tracked")
-        dropped += DroppedEvent.ofEvent(e, Reason.UnknownTable, cursor.lastEmittedCsn, d.source)
+    val table = e.tableName
+    if (!TransactionCompletion.isTracked(table)) {
+      logger.debug(s"Ignoring event pos=${e.pos} for $key: table ${e.table} is not tracked")
+      dropped += DroppedEvent.ofEvent(e, Reason.UnknownTable, cursor.lastEmittedCsn, d.source)
+    } else if (e.pos != null && store.positionExists(key, table, e.pos)) {
+      // A null pos is never a duplicate: such events are always buffered and counted.
+      logger.debug(s"Ignoring duplicate event pos=${e.pos} for $key")
+      dropped += DroppedEvent.ofEvent(e, Reason.DuplicateEvent, cursor.lastEmittedCsn, d.source)
+    } else {
+      val summary = store.getSummary(key).getOrElse(TransactionSummary(e.xid, e.csn))
+      val index = summary.recordEvent(table)
+      store.putEvent(key, index, e)
+      if (e.pos != null) store.putPosition(key, table, e.pos, index)
+      store.putSummary(key, summary)
     }
   }
 
@@ -161,15 +169,19 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
       val seq = cursor.nextSeqToEmit
       val key = store.queueGet(seq).getOrElse(
         throw new IllegalStateException(s"Emission queue is missing sequence $seq"))
-      val state = store.getBuffer(key).getOrElse(
+      val summary = store.getSummary(key).getOrElse(
         throw new IllegalStateException(s"Queued transaction $key has no buffer"))
 
-      if (state.isComplete) {
+      if (summary.isComplete) {
+        val state = new TransactionState()
+        state.xid = summary.xid
+        state.csn = summary.csn
+        state.setMetadata(summary.getMetadata)
+        removeTransaction(key, summary)(state.appendAccepted)
         out += state
-        store.removeBuffer(key)
         store.queueRemove(seq)
         cursor.nextSeqToEmit += 1
-        recordEmitted(cursor, state.xid, state.csn)
+        recordEmitted(cursor, summary.xid, summary.csn)
       } else blocked = true
     }
     out.toSeq
@@ -182,21 +194,39 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
    */
   private def purgeBelow(bound: String, dropped: mutable.Buffer[DroppedEvent]): Unit = {
     val limit = new BigDecimal(bound)
-    val toRemove = store.bufferKeys
+    val toRemove = store.summaryKeys
       .filter(k => TransactionSequencer.csnOf(k).exists(_.compareTo(limit) < 0))
       .take(TransactionSequencer.MaxPurgePerStep)
       .toVector
     if (toRemove.nonEmpty) {
       toRemove.foreach { key =>
-        store.getBuffer(key).foreach { s =>
-          dropped += DroppedEvent.ofPurgedBuffer(s.xid, s.csn, s.orderEvents.size, s.orderDetailEvents.size,
-            s.orderLineItemEvents.size, bound)
+        store.getSummary(key).foreach { s =>
+          dropped += DroppedEvent.ofPurgedBuffer(s.xid, s.csn, s.receivedOrders, s.receivedOrderDetails,
+            s.receivedOrderLineItems, bound)
+          removeTransaction(key, s)(_ => ())
         }
-        store.removeBuffer(key)
       }
       logger.info(s"Removed ${toRemove.size} buffered transaction(s) without a marker below CSN $bound" +
         (if (toRemove.size == TransactionSequencer.MaxPurgePerStep) "; more may remain for later steps" else ""))
     }
+  }
+
+  /**
+   * Reads each of a transaction's buffered events once, in buffered order, passes it to `f`, and
+   * removes it with its position entry; then removes the summary. The only way buffered entries
+   * leave state, so emission and purge can't leave orphans behind.
+   */
+  private def removeTransaction(key: String, summary: TransactionSummary)(f: DataChangeEvent => Unit): Unit = {
+    var i = 0
+    while (i < summary.eventCount) {
+      val e = store.getEvent(key, i).getOrElse(
+        throw new IllegalStateException(s"Transaction $key is missing buffered event $i of ${summary.eventCount}"))
+      f(e)
+      store.removeEvent(key, i)
+      if (e.pos != null) store.removePosition(key, e.tableName, e.pos)
+      i += 1
+    }
+    store.removeSummary(key)
   }
 
   private def trackBlocked(cursor: Cursor, emittedAny: Boolean): Option[BlockedAlert] = {
@@ -210,7 +240,7 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     if (blockedFor <= blockedAlertThresholdMs) return None
 
     val headKey = store.queueGet(cursor.nextSeqToEmit).get
-    val progress = store.getBuffer(headKey).map(_.progress).getOrElse("unknown")
+    val progress = store.getSummary(headKey).map(_.progress).getOrElse("unknown")
     val alert = BlockedAlert(headKey, progress, cursor.queueDepth - 1, blockedFor)
     logger.error(s"Transaction $headKey has blocked emission for ${blockedFor / 1000}s; " +
       s"${alert.queuedBehind} transaction(s) queued behind it. Progress: $progress")
@@ -263,13 +293,6 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     }
 
   private def compareCsn(a: String, b: String): Int = new BigDecimal(a).compareTo(new BigDecimal(b))
-
-  private def newState(xid: String, csn: String): TransactionState = {
-    val s = new TransactionState()
-    s.xid = xid
-    s.csn = csn
-    s
-  }
 }
 
 object TransactionSequencer {
@@ -277,6 +300,12 @@ object TransactionSequencer {
   val MaxPurgePerStep = 100000
 
   def txKey(xid: String, csn: String): String = s"$xid:$csn"
+
+  /** State key of a transaction's buffered event at `index` (0-based, in buffered order). */
+  def eventKey(txKey: String, index: Int): String = s"$txKey#$index"
+
+  /** State key recording that a transaction has buffered `pos` for `table` (name without schema). */
+  def positionKey(txKey: String, table: String, pos: String): String = s"$txKey|$table|$pos"
 
   /** The CSN part of a buffer key (text after the last ':'), or None if it isn't a number. */
   def csnOf(txKey: String): Option[BigDecimal] = {

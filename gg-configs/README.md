@@ -118,7 +118,7 @@ as steps 2 to 5 take, usually seconds. Extract `ext04` keeps running.
 7. Start `TransactionalCdcProcessingApp` on a **new** `job.output.checkpoint-location`. Starting
    offsets apply only to a new checkpoint; on an existing one, Spark resumes from its own offsets.
 8. Verify: after the next source transaction commits, its row appears in `order_stream`, and the
-   app logs no `has blocked emission` error. In the state store (see `STATE-STORE-DEBUG.md`),
+   app logs no `has blocked emission` error. In the state store (see `docs/STATE-STORE-DEBUG.md`),
    `seq_buffers` holds only in-flight transactions.
 
 After the first start the offsets block is ignored. It can stay, or be removed.
@@ -164,3 +164,64 @@ The cost is a slower first start, and state that holds the history until the pur
 
 Rollback: redeploy the previous jar with its original checkpoint location. The
 replicat config changes are compatible with the old app.
+
+### Migrating to per-event buffering state
+
+The release that stores each buffered event separately (OpenSpec change
+`fix-large-transaction-buffering`) uses a different state layout for
+`TransactionalCdcProcessingApp`. It can't use a checkpoint written by an earlier release: on
+one, it fails at the first batch with a message naming this section. Only stage 1 is affected.
+`ScdType1MergeApp` keeps its checkpoint and can keep running.
+
+The steps below start stage 1 on a new checkpoint without writing any `order_stream` row
+twice, except for the few transactions in the marker message it restarts from.
+
+1. Stop `TransactionalCdcProcessingApp`. Leave GoldenGate and `ScdType1MergeApp` running.
+2. Note `C`, the highest CSN already written:
+   ```sql
+   SELECT MAX(CAST(csn AS DECIMAL(38,0))) FROM argus1.order_stream;
+   ```
+3. Find the offset of the first metadata message holding a marker with CSN `C` or higher. A
+   message holds one marker, or an array of them when `GROUPTRANSOPS` grouped several:
+   ```sh
+   kafka-console-consumer --bootstrap-server localhost:9092 \
+     --topic dev.transaction_metadata_json --from-beginning --timeout-ms 20000 \
+     --property print.offset=true | grep -n '"csn"' | less
+   ```
+   Starting at `C` rather than above it never skips a transaction, even one that shares CSN `C`
+   with a transaction already written. The transaction at `C`, and any other transaction in that
+   message, is written to `order_stream` again. That's harmless for `orders_current`, whose merge
+   is version-aware.
+4. Choose the data topics' starting offsets:
+   - **`earliest`** (simplest). Data of transactions already written gets no marker. It's buffered,
+     then removed once the first transaction is emitted, and recorded in `dropped_events` with
+     reason `NO_MARKER_BELOW_CURSOR`. The cost is reading the whole retained history.
+   - **Offsets from a time before the oldest in-flight transaction**, for example 30 minutes
+     before step 1. Check that no transaction was blocked for longer than that (the app logs
+     `has blocked emission` for those):
+     ```sh
+     for t in dev.appuser.orders.json dev.appuser.order_details.json dev.appuser.order_line_items.json; do
+       kafka-get-offsets --bootstrap-server localhost:9092 --topic $t --time <epoch-millis>
+     done
+     ```
+5. Set the starting offsets and a **new** checkpoint location, then start the new release. In
+   `transactional-cdc-processing.conf`:
+   ```hocon
+   job.kafka.starting-offsets {
+     transaction-metadata = """{"0":<offset from step 3>}"""
+     orders = "earliest"            # or the JSON map from step 4
+     order-details = "earliest"
+     order-line-items = "earliest"
+   }
+   job.output.checkpoint-location = "/path/to/new/checkpoint"
+   ```
+6. Verify: new transactions appear in `order_stream`, and no `has blocked emission` error is
+   logged once the history has been read. In the state store (see `docs/STATE-STORE-DEBUG.md`),
+   `seq_txs` holds only in-flight transactions.
+
+Fallback: start every topic from `earliest` on a new checkpoint, as in "Migrating an existing
+deployment" above. `order_stream` then gets duplicate history rows unless it is truncated first.
+
+Rollback: redeploy the previous release on its original checkpoint, which this migration leaves
+untouched. Transactions the new release already emitted are written to `order_stream` again,
+which is harmless for `orders_current`.

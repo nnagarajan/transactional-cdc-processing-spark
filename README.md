@@ -224,16 +224,16 @@ spark-sql \
 
 ## Documentation
 
-- **[PIPELINE_DIAGRAMS.md](PIPELINE_DIAGRAMS.md)** - Mermaid diagrams illustrating both pipelines and data flows
-- **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - Detailed architecture, configuration options, and troubleshooting guide
-- **[SCD_TYPE1_README.md](SCD_TYPE1_README.md)** - SCD Type 1 merge application documentation
-- **[oracle-schema.md](oracle-schema.md)** - Oracle source table schema definitions
+- **[PIPELINE_DIAGRAMS.md](docs/PIPELINE_DIAGRAMS.md)** - Mermaid diagrams illustrating both pipelines and data flows
+- **[IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed architecture, configuration options, and troubleshooting guide
+- **[SCD_TYPE1_README.md](docs/SCD_TYPE1_README.md)** - SCD Type 1 merge application documentation
+- **[oracle-schema.md](docs/oracle-schema.md)** - Oracle source table schema definitions
 
 ## SCD Type 1 Maintenance
 
 This repository includes a second application to maintain SCD Type 1 (current state) from the SCD Type 2 (historical) data:
 
-**[ScdType1MergeApp](SCD_TYPE1_README.md)** - Maintains `orders_current` table with entity-level versioning
+**[ScdType1MergeApp](docs/SCD_TYPE1_README.md)** - Maintains `orders_current` table with entity-level versioning
 
 Key features:
 - Reads from `order_stream` (SCD Type 2) as a stream
@@ -241,7 +241,7 @@ Key features:
 - Handles cases where order version might not increase but order detail/line item versions do
 - Ignores duplicate records with same version
 
-See [SCD_TYPE1_README.md](SCD_TYPE1_README.md) for detailed documentation.
+See [SCD_TYPE1_README.md](docs/SCD_TYPE1_README.md) for detailed documentation.
 
 ## Comparison with Flink Implementation
 
