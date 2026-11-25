@@ -60,7 +60,7 @@ The upgrade writes dictionary changes but doesn't touch `ORDERS`, `ORDER_DETAILS
 4. **Otherwise, re-initialise:**
    - Create a new Extract, or register it again on the target.
    - Start new trails, and reposition `kc` and `rep3` to one shared cut point, as in the
-     [go-live runbook](gg-configs/README.md#go-live-first-start-with-markers).
+     [go-live runbook](../gg-configs/README.md#go-live-first-start-with-markers).
    - Start `TransactionalCdcProcessingApp` with a **new checkpoint location**, so the cursor starts empty.
    - Keep `order_stream` as history. `orders_current` stays correct as long as the migrated data starts with the same row versions.
 

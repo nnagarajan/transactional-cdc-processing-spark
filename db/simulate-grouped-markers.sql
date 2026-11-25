@@ -56,7 +56,7 @@
  * 5. In the pipeline (TransactionalCdcProcessingApp) with the original formatter:
  *    no row for any of the three orders appears in order_stream, and after
  *    job.ordering.blocked-alert-threshold the log reports csn1 as a blocked head.
- *    See STATE-STORE-DEBUG.md to inspect the stuck buffer (expected 10, received 4).
+ *    See docs/STATE-STORE-DEBUG.md to inspect the stuck buffer (expected 10, received 4).
  *
  * Note: the same-CSN case (two transactions committing at one SCN) can't be forced
  * from a single session; this script covers different CSNs only.
