@@ -11,13 +11,12 @@ import java.{util => ju}
 
 import scala.beans.BeanProperty
 
-import org.apache.logging.log4j.scala.Logger
-
 import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, TransactionMetadata}
 
 /**
- * State object tracking events for a single transaction.
- * Buffers all CDC events until transaction completion is detected.
+ * A transaction's events grouped by table, in buffered order. The sequencer assembles one when it
+ * emits a transaction and hands it to [[OrderJoiner]]; while a transaction is buffered, state holds
+ * a [[TransactionSummary]] and one entry per event instead.
  */
 class TransactionState extends Serializable {
 
@@ -29,24 +28,18 @@ class TransactionState extends Serializable {
   @BeanProperty var orderLineItemEvents: ju.List[DataChangeEvent] = new ju.ArrayList[DataChangeEvent]()
 
   private var _metadata: TransactionMetadata = _
-  private var _expectedOrderCount: Int = 0
-  private var _expectedOrderDetailCount: Int = 0
-  private var _expectedOrderLineItemCount: Int = 0
+  private var _expected: TableCounts = TableCounts.Zero
 
   def getMetadata: TransactionMetadata = _metadata
 
   def setMetadata(metadata: TransactionMetadata): Unit = {
     _metadata = metadata
-    if (metadata != null) {
-      _expectedOrderCount = metadata.getEventCountFor("ORDERS")
-      _expectedOrderDetailCount = metadata.getEventCountFor("ORDER_DETAILS")
-      _expectedOrderLineItemCount = metadata.getEventCountFor("ORDER_LINE_ITEMS")
-    }
+    if (metadata != null) _expected = TableCounts.expectedBy(metadata)
   }
 
-  def getExpectedOrderCount: Int = _expectedOrderCount
-  def getExpectedOrderDetailCount: Int = _expectedOrderDetailCount
-  def getExpectedOrderLineItemCount: Int = _expectedOrderLineItemCount
+  def getExpectedOrderCount: Int = _expected.orders
+  def getExpectedOrderDetailCount: Int = _expected.details
+  def getExpectedOrderLineItemCount: Int = _expected.lineItems
 
   /**
    * Buffers an event unless an event with the same GoldenGate trail position (`pos`)
@@ -55,12 +48,7 @@ class TransactionState extends Serializable {
    * @return Added if the event was buffered; DuplicatePos or UnknownTable if it was ignored
    */
   def addEvent(event: DataChangeEvent): TransactionState.AddResult = {
-    val target = event.tableName match {
-      case "ORDERS"           => orderEvents
-      case "ORDER_DETAILS"    => orderDetailEvents
-      case "ORDER_LINE_ITEMS" => orderLineItemEvents
-      case _                  => null
-    }
+    val target = listFor(event)
     if (target == null) TransactionState.UnknownTable
     else if (containsPos(target, event.pos)) TransactionState.DuplicatePos
     else {
@@ -69,40 +57,34 @@ class TransactionState extends Serializable {
     }
   }
 
+  /** Appends an event already accepted (and de-duplicated) by the sequencer, without a scan. */
+  private[processor] def appendAccepted(event: DataChangeEvent): Unit = {
+    val target = listFor(event)
+    if (target == null)
+      throw new IllegalStateException(s"Buffered event pos=${event.pos} of $xid:$csn has untracked table ${event.table}")
+    target.add(event)
+  }
+
+  private def listFor(event: DataChangeEvent): ju.List[DataChangeEvent] = event.tableName match {
+    case TransactionCompletion.Orders         => orderEvents
+    case TransactionCompletion.OrderDetails   => orderDetailEvents
+    case TransactionCompletion.OrderLineItems => orderLineItemEvents
+    case _                                    => null
+  }
+
   private def containsPos(events: ju.List[DataChangeEvent], pos: String): Boolean =
     pos != null && events.stream().anyMatch(e => pos == e.pos)
 
-  /**
-   * Complete when the marker has arrived and each table has exactly the declared number of
-   * distinct events. More events than declared means the marker and data disagree: this is
-   * logged and treated as incomplete, so it surfaces as a blocked transaction instead of
-   * being emitted with the wrong contents.
-   */
-  def isComplete: Boolean = {
-    if (_metadata == null) return false
-    if (isOverfilled) {
-      TransactionState.log.error(s"Transaction $xid:$csn has more events than its marker declares. $progress")
-      return false
-    }
-    orderEvents.size == _expectedOrderCount &&
-    orderDetailEvents.size == _expectedOrderDetailCount &&
-    orderLineItemEvents.size == _expectedOrderLineItemCount
-  }
+  private def received: TableCounts =
+    TableCounts(orderEvents.size, orderDetailEvents.size, orderLineItemEvents.size)
 
-  private def isOverfilled: Boolean =
-    orderEvents.size > _expectedOrderCount ||
-      orderDetailEvents.size > _expectedOrderDetailCount ||
-      orderLineItemEvents.size > _expectedOrderLineItemCount
+  /** See [[TransactionCompletion.isComplete]]. */
+  def isComplete: Boolean = TransactionCompletion.isComplete(xid, csn, _metadata != null, _expected, received)
 
-  def progress: String =
-    s"Orders: ${orderEvents.size}/${_expectedOrderCount}, " +
-      s"Details: ${orderDetailEvents.size}/${_expectedOrderDetailCount}, " +
-      s"LineItems: ${orderLineItemEvents.size}/${_expectedOrderLineItemCount}"
+  def progress: String = TransactionCompletion.progress(_expected, received)
 }
 
 object TransactionState {
-  private val log: Logger = Logger(classOf[TransactionState])
-
   /** Outcome of [[TransactionState.addEvent]]. */
   sealed trait AddResult
   case object Added extends AddResult

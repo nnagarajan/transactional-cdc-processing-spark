@@ -39,14 +39,14 @@ order_stream (SCD Type 2) → foreachBatch → ScdType1Merger (Delta MERGE) → 
 
 All rows share one grouping key, so a single `TransactionOrderingProcessor` (`transformWithState`, processing-time mode) sees every in-flight transaction. It is a thin Spark adapter over `TransactionSequencer`, which holds the logic and is unit-tested without Spark through the `SequencerStore` trait.
 
-1. Data events are buffered per transaction (`xid:csn`) in `TransactionState`, separated by table and deduplicated on `pos`
+1. Data events are buffered per transaction (`xid:csn`): a small `TransactionSummary` (marker, per-table counts, event count) plus one state entry per event, deduplicated on `(table, pos)` by key lookup. Buffering is linear in transaction size; each event is written once and read once
 2. Markers (transaction metadata) must come from partition 0 of the metadata topic, or the query fails. They are queued in Kafka offset order, which is commit order. Duplicate markers are ignored.
 3. After each batch (and on a timer), transactions are emitted from the head of the queue while `TransactionState.isComplete` is true, meaning exact per-table counts. `OrderJoiner.joinTransaction()` produces the `OrderStream` records.
 4. An incomplete head blocks all later transactions and is never skipped. An error is logged once it has been blocked longer than `job.ordering.blocked-alert-threshold`.
 5. Events and markers for already-emitted transactions are dropped. The `Cursor` tracks the last emitted CSN (compared numerically) and the xids emitted at it.
 6. Every drop (replays, duplicates, unknown tables, purged buffers without a marker, unusable Kafka messages) is returned in `SequencerResult.dropped` and written to `argus1.dropped_events` with its reason (`job.output.dropped-events.*`; `enabled = false` only logs drops)
 
-State: `MapState` buffers, `MapState` queue (sequence number → `xid:csn`), `ValueState[Cursor]`. The sink uses a processing-time trigger (`job.ordering.trigger-interval`), because Spark 4.x `transformWithState` in processing-time mode otherwise runs empty batches back to back. Tests therefore wait on query progress, not `processAllAvailable()`.
+State: `MapState` `txs` (`xid:csn` → `TransactionSummary`), `events` (`xid:csn#i` → event, in buffered order), `positions` (`xid:csn|TABLE|pos` → `i`), `queue` (sequence number → `xid:csn`), `ValueState[Cursor]`. A legacy `buffers` map is declared only to refuse checkpoints from before per-event buffering (see `docs/STATE-STORE-DEBUG.md`). The sink uses a processing-time trigger (`job.ordering.trigger-interval`), because Spark 4.x `transformWithState` in processing-time mode otherwise runs empty batches back to back. Tests therefore wait on query progress, not `processAllAvailable()`.
 
 ### Key Classes
 
@@ -61,7 +61,8 @@ State: `MapState` buffers, `MapState` queue (sequence number → `xid:csn`), `Va
 | `CdcJsonParsing` | Parses the GoldenGate JSON topics; a metadata message may hold one marker object or an array of markers (kept with Kafka offset and index). Every row carries its Kafka topic/partition/offset; unusable messages become `RAW_DROP` rows |
 | `ScdType1MergeApp` | Scala object; streams the SCD Type 2 Delta table into `ScdType1Merger` |
 | `ScdType1Merger` | Version-aware Delta MERGE; CSN-guarded transaction context; child-only rows become placeholders |
-| `TransactionState` | Serializable state class buffering events per transaction; dedups on `pos`; exact expected vs. received counts |
+| `TransactionSummary` | Per buffered transaction state: marker, received count per table, event count; decides completeness without reading events |
+| `TransactionState` | A transaction's events grouped by table, assembled once at emission for `OrderJoiner`; shares completion rules (`TransactionCompletion`) with the summary |
 | `OrderJoiner` | Scala object with `joinTransaction()` that denormalizes buffered events into `OrderStream` records |
 | `DataChangeEvent` | Generic CDC event model (table, op_type, before/after maps, xid, csn) |
 | `TransactionMetadata` | Transaction metadata with per-table event counts; `DataCollectionCount` is a companion top-level class |
@@ -115,6 +116,7 @@ The jar doesn't bundle Typesafe Config or `log4j-api-scala`, so both must be in 
 - Data events whose marker never arrives (for example history from before the metadata topic existed) stay buffered until a transaction with a higher CSN is emitted; then the sequencer removes them, at most 100,000 per step. They never block output. There is no time-based TTL
 - The metadata topic must have exactly one partition, and markers must arrive in commit (CSN-nondecreasing) order; a marker below the last emitted CSN is dropped with a WARN
 - Markers come from the `gg-formatter/` formatter (one marker per source transaction; a `GROUPTRANSOPS`-grouped delivery is one message holding a JSON array of markers, queued by `(offset, index)`). That module builds only where GoldenGate's jars exist (`/opt/oracle/ggbd/ggjava/resources/lib`) and is not part of the main Maven build
-- The state layout is incompatible with pre-ordering checkpoints; upgrading requires a new checkpoint location
+- The state layout is incompatible with pre-ordering checkpoints and with checkpoints from before per-event buffering; upgrading requires a new checkpoint location (the app refuses an old one; see "Migrating to per-event buffering state" in [gg-configs/README.md](gg-configs/README.md))
+- A large transaction is still emitted whole, in commit order: it holds back the transactions behind it until all its events have arrived, and is assembled in memory once at emission
 - The first start with markers (data topics with history, empty metadata topic) needs one shared cut point for `kc` and `rep3` and per-topic starting offsets (`job.kafka.starting-offsets.<topic-key>`); see the go-live runbook in [gg-configs/README.md](gg-configs/README.md#go-live-first-start-with-markers). Each Kafka source reads at most `job.kafka.max-offsets-per-trigger` (default 50,000) offsets per batch
 - No watermark advancement (unlike the Flink implementation)

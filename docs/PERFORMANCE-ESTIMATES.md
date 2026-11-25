@@ -11,7 +11,7 @@ How long an event takes to travel from an Oracle commit to the Delta tables, and
 | Oracle commit → `order_stream` | **about 10–20 s** |
 | Oracle commit → `orders_current` | **about 15–40 s** |
 
-At 100,000 events per minute the pipeline should keep up, with roughly twice the capacity it needs. Two exceptions can change that completely: **very large transactions** and **`GROUPTRANSOPS 1` on `rep3`** (see [What would break the estimate](#what-would-break-the-estimate)).
+At 100,000 events per minute the pipeline should keep up, with roughly twice the capacity it needs. **`GROUPTRANSOPS 1` on `rep3`** can change that completely. **Very large transactions** delay the transactions behind them for as long as they take to arrive, typically tens of seconds rather than hours (see [What would break the estimate](#what-would-break-the-estimate)).
 
 ## Assumptions
 
@@ -40,19 +40,27 @@ Adding executors won't raise that ceiling. All rows share one grouping key, so `
 
 ## What would break the estimate
 
-### 1. Large transactions slow down sharply
+### 1. Large transactions delay the transactions behind them
 
-For each event, `TransactionSequencer.acceptData` reads the transaction's whole buffered `TransactionState`, adds the event, and writes the whole state back (`getBuffer`, `addEvent`, `putBuffer`). A transaction of n events therefore costs about n²/2 event serializations.
+Buffering costs time linear in a transaction's size. Each event is stored as its own state entry, next to a small per-transaction summary. For every accepted event, `TransactionSequencer` does:
 
-| Transaction size | Approximate work | Effect |
-|---|---|---|
-| 5 events | negligible | none |
-| 550 events (the sample insert) | about 150,000 event serializations | around a second |
-| 75,000–150,000 events (sizes seen in the `rep3` logs) | about 3–11 billion | **likely hours** for that one transaction, and every transaction behind it waits |
+- 2 small reads: the summary, and a `(table, pos)` lookup for duplicates
+- 3 writes: the event, its position entry, and the summary
 
-A bulk load committed as one large transaction would stall all output.
+On emission, each event is read once and its two entries are removed. Completeness, duplicate and blocked-progress checks read no events. A transaction of n events therefore costs about 5n small state writes, and `TransactionSequencerTest` asserts exactly that for 5 and 55,000 events.
 
-**Fix:** store events per transaction in a separate state map, keyed by transaction and `pos`, instead of rewriting one growing object per event. That makes each event a constant-cost write.
+Before this layout, each event rewrote the whole buffered transaction (about n²/2 event writes). The comparison below assumes one old event rewrite is about 6.7 µs (550 events in about a second), and the new cost is about 1.5 of those units per event.
+
+| Transaction size | Previous layout | Now (sequencer only) | Effect |
+|---|---|---|---|
+| 5 events | negligible | negligible | none |
+| 550 events (the sample insert) | about 1 s | about 5 ms | none |
+| 55,000 events (a 10,000-order bulk load) | about 2.8 h | about 0.5 s | the transaction arrives in one or two triggers, then emits |
+| 75,000–150,000 events (sizes seen in the `rep3` logs) | about 5–21 h | about 0.75–1.5 s | a few triggers, since each source reads at most `job.kafka.max-offsets-per-trigger` (50,000) offsets per batch |
+
+Output is still in strict commit order, so a large transaction holds back every transaction behind it until all its events have arrived. That is now roughly 15–30 s for a 55,000-event transaction, dominated by trigger intervals, `OrderJoiner` and the Delta commit. Emission also still builds the whole transaction in memory once.
+
+See `cost-analysis.md` in the `fix-large-transaction-buffering` OpenSpec change (under `openspec/changes/`, or `openspec/changes/archive/` once archived) for the derivation and worked examples.
 
 ### 2. `GROUPTRANSOPS 1` on `rep3` could fall behind
 
@@ -80,5 +88,5 @@ query.lastProgress.processedRowsPerSecond
 
 - The pipeline keeps up if `triggerExecution` stays well under 10,000 ms.
 - For end-to-end latency, compare each row's `dwhProcessedTs` in `order_stream` with its source commit time.
-- Time one 10,000-event transaction separately to see the large-transaction cost directly.
+- Time one 55,000-event (10,000-order) transaction separately to see the large-transaction cost directly.
 - Watch `rep3` lag (`LAG REPLICAT rep3` in GGSCI) to confirm markers aren't the bottleneck.
