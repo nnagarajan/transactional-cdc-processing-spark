@@ -198,7 +198,7 @@ class TransactionSequencerTest {
     assertThat(alert.isDefined).isTrue
     assertThat(alert.get.headTxKey).isEqualTo("t1:100")
     assertThat(alert.get.queuedBehind).isEqualTo(1L)
-    assertThat(alert.get.progress).contains("LineItems: 1/2")
+    assertThat(alert.get.progress).isEqualTo("Orders: 0/0, Details: 0/0, LineItems: 1/2")
   }
 
   @Test
@@ -263,12 +263,7 @@ class TransactionSequencerTest {
   @Test
   def largeHistoryIsRemovedOverSeveralSteps(): Unit = {
     val total = TransactionSequencer.MaxPurgePerStep + 5000
-    (0 until total).foreach { i =>
-      val s = new TransactionState()
-      s.xid = s"h$i"
-      s.csn = i.toString
-      store.buffers(s"h$i:$i") = s
-    }
+    (0 until total).foreach(i => store.seed(s"h$i:$i", TransactionSummary(s"h$i", i.toString)))
 
     run(mk("t1", "1000000", 0))
     assertThat(store.buffers.size).isEqualTo(5000)
@@ -412,5 +407,129 @@ class TransactionSequencerTest {
     assertThat(store.getCursor.lastEmittedCsn).isEqualTo(cursorBefore)
     assertThat(store.buffers.keySet.toSet == buffersBefore).isTrue
     assertThat(store.queue.toMap == queueBefore).isTrue
+  }
+
+  // ---- per-event buffering (fix-large-transaction-buffering) ----
+
+  private def storeIsEmptyOf(txKey: String): Unit = {
+    assertThat(store.summaries.contains(txKey)).isFalse
+    assertThat(store.events.keys.exists(_.startsWith(s"$txKey#"))).isFalse
+    assertThat(store.positions.keys.exists(_.startsWith(s"$txKey|"))).isFalse
+  }
+
+  @Test
+  def emittedTransactionKeepsBufferedOrderPerTable(): Unit = {
+    val m = MarkerInput(marker("a", "100", orders = 2, lineItems = 3), 0, 1L)
+    val r = run(DataInput(order("a", "100", "p1", orderId = 1)), li("a", "100", "p2"),
+      DataInput(order("a", "100", "p3", orderId = 2)), li("a", "100", "p4"), li("a", "100", "p5"), m)
+
+    val emitted = r.emitted.head
+    assertThat(emitted.orderEvents.toArray.map(_.asInstanceOf[com.technext.demos.txbuffering.model.generic.DataChangeEvent].pos))
+      .containsExactly("p1", "p3")
+    assertThat(emitted.orderLineItemEvents.toArray.map(_.asInstanceOf[com.technext.demos.txbuffering.model.generic.DataChangeEvent].pos))
+      .containsExactly("p2", "p4", "p5")
+    assertThat(emitted.getMetadata.xid).isEqualTo("a")
+    storeIsEmptyOf("a:100")
+  }
+
+  @Test
+  def eventsWithoutPosAreNeverDuplicates(): Unit = {
+    val r = run(mk("a", "100", 2), DataInput(lineItem("a", "100", null, 1)), DataInput(lineItem("a", "100", null, 2)))
+
+    assertThat(keys(r).toArray).containsExactly("a:100")
+    assertThat(r.emitted.head.orderLineItemEvents.size).isEqualTo(2)
+    assertThat(r.dropped.isEmpty).isTrue
+    storeIsEmptyOf("a:100")
+  }
+
+  @Test
+  def samePosInAnotherTableIsNotADuplicate(): Unit = {
+    val m = MarkerInput(marker("a", "100", orders = 1, lineItems = 1), 0, 1L)
+    val r = run(DataInput(order("a", "100", "p1")), li("a", "100", "p1"), m)
+
+    assertThat(keys(r).toArray).containsExactly("a:100")
+    assertThat(r.dropped.isEmpty).isTrue
+  }
+
+  @Test
+  def purgedTransactionLeavesNoEntries(): Unit = {
+    run(li("h", "100", "p1"), li("h", "100", "p2"), li("h", "100", "p3"))
+    assertThat(store.events.size).isEqualTo(3)
+
+    run(mk("t", "200", 0))
+
+    storeIsEmptyOf("h:100")
+    assertThat(store.events.isEmpty).isTrue
+    assertThat(store.positions.isEmpty).isTrue
+  }
+
+  /**
+   * Buffers one transaction of `n` line items in batches of `batch` (marker in the first batch),
+   * then checks that every count of state work is a fixed multiple of `n`.
+   */
+  private def bufferAndEmit(xid: String, n: Int, batch: Int): Unit = {
+    store.resetCounts()
+    val marker = mk(xid, "100", n)
+    val batches = (0 until n).grouped(batch).toSeq
+    batches.zipWithIndex.foreach { case (idx, b) =>
+      val events = idx.map(i => li(xid, "100", s"p$i"))
+      val r = run((if (b == 0) events :+ marker else events): _*)
+      if (b < batches.size - 1) {
+        assertThat(r.emitted.isEmpty).isTrue
+        assertThat(store.count("getEvent")).isEqualTo(0L)
+      } else {
+        val emitted = r.emitted.head
+        assertThat(emitted.orderLineItemEvents.size).isEqualTo(n)
+        assertThat(emitted.orderLineItemEvents.get(0).pos).isEqualTo("p0")
+        assertThat(emitted.orderLineItemEvents.get(n - 1).pos).isEqualTo(s"p${n - 1}")
+      }
+    }
+    val steps = batches.size.toLong
+    // Written once per event (plus the marker's summary write), read once at emission, removed once.
+    assertThat(store.count("putEvent")).isEqualTo(n.toLong)
+    assertThat(store.count("putPosition")).isEqualTo(n.toLong)
+    assertThat(store.count("putSummary")).isEqualTo(n + 1L)
+    assertThat(store.count("getEvent")).isEqualTo(n.toLong)
+    assertThat(store.count("removeEvent")).isEqualTo(n.toLong)
+    assertThat(store.count("removePosition")).isEqualTo(n.toLong)
+    assertThat(store.count("positionExists")).isEqualTo(n.toLong)
+    assertThat(store.count("getSummary")).isLessThanOrEqualTo(n + 1L + steps)
+    // Puts and removals: 5 per event, plus the queue, one cursor write per step and the summary.
+    assertThat(store.writes).isEqualTo(5L * n + 2 + 2 + steps)
+    storeIsEmptyOf(s"$xid:100")
+  }
+
+  @Test
+  def fiveEventTransactionCostsAFixedAmountPerEvent(): Unit = bufferAndEmit("small", 5, 5)
+
+  @Test
+  def bulkTransactionOf55000EventsCostsTheSameAmountPerEvent(): Unit = bufferAndEmit("bulk", 55000, 5000)
+
+  @Test
+  def duplicateInALargeTransactionReadsNoEvents(): Unit = {
+    run(mk("bulk", "100", 55000))
+    (0 until 50000).grouped(5000).foreach(idx => run(idx.map(i => li("bulk", "100", s"p$i")): _*))
+    store.resetCounts()
+
+    val r = run(li("bulk", "100", "p40000"))
+
+    assertThat(r.dropped.map(_.reason).toArray).containsExactly(Reason.DuplicateEvent)
+    assertThat(store.count("getEvent")).isEqualTo(0L)
+    assertThat(store.count("putEvent")).isEqualTo(0L)
+    assertThat(store.summaries("bulk:100").eventCount).isEqualTo(50000)
+  }
+
+  @Test
+  def largeBlockedHeadIsCheckedWithoutReadingEvents(): Unit = {
+    run(mk("bulk", "100", 55000), mk("next", "200", 0))
+    (0 until 50000).grouped(5000).foreach(idx => run(idx.map(i => li("bulk", "100", s"p$i")): _*))
+    store.resetCounts()
+    nowMs += 11 * 60 * 1000L
+
+    val r = seq.onTimer()
+
+    assertThat(r.emitted.isEmpty).isTrue
+    assertThat(r.alert.get.progress).isEqualTo("Orders: 0/0, Details: 0/0, LineItems: 50000/55000")
+    assertThat(store.count("getEvent")).isEqualTo(0L)
   }
 }

@@ -286,7 +286,7 @@ OPTIMIZE orders_current;
 
 ## See Also
 
-- [Main Application README](README.md)
-- [Database Scripts](db/)
+- [Main Application README](../README.md)
+- [Database Scripts](../db/)
 - [Implementation Guide](IMPLEMENTATION.md)
 - [Oracle Source Schema](oracle-schema.md)

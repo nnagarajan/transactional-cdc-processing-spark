@@ -306,7 +306,7 @@ tables (`SeedJob`) at the same time.
 ## Source Contract (GoldenGate)
 
 Ordering and completeness depend on the source configuration in `gg-configs/`
-(see [gg-configs/README.md](gg-configs/README.md)):
+(see [gg-configs/README.md](../gg-configs/README.md)):
 
 | Setting | Where | Why |
 |---|---|---|
@@ -318,7 +318,7 @@ Ordering and completeness depend on the source configuration in `gg-configs/`
 | `TransactionBoundaryEventJsonFormatter` from `gg-formatter/` | `rep3.props` | One marker per source transaction even with `GROUPTRANSOPS 1000`. A grouped delivery is one message holding a JSON array of markers, queued by `(offset, index)` |
 
 The marker contract is tested on both sides: the formatter's output in
-[gg-formatter](gg-formatter/README.md), and its parsing and ordering in `CdcJsonParsingTest` and
+[gg-formatter](../gg-formatter/README.md), and its parsing and ordering in `CdcJsonParsingTest` and
 `TransactionSequencerTest`.
 
 ## Key Features

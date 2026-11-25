@@ -127,7 +127,7 @@ spark-sql \
   -f db/query_table.sql
 ```
 
-See the [db/](db/) directory for more query examples and table management scripts.
+See the [db/](../db/) directory for more query examples and table management scripts.
 
 ## Next Steps
 

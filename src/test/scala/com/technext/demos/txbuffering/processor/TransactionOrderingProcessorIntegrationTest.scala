@@ -36,6 +36,8 @@ case class TestCdcRow(
 /** Output collected per micro-batch, in batch order: (batchId, xid:csn of each emitted row). */
 object CollectedBatches {
   val batches = new ConcurrentLinkedQueue[(Long, Seq[String])]()
+  /** Each emitted order record: (xid:csn, number of line items it holds). */
+  val lineItemCounts = new ConcurrentLinkedQueue[(String, Int)]()
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -59,7 +61,10 @@ class TransactionOrderingProcessorIntegrationTest {
   def stopSpark(): Unit = if (spark != null) spark.stop()
 
   @BeforeEach
-  def reset(): Unit = CollectedBatches.batches.clear()
+  def reset(): Unit = {
+    CollectedBatches.batches.clear()
+    CollectedBatches.lineItemCounts.clear()
+  }
 
   // ---- row builders ----
 
@@ -88,7 +93,9 @@ class TransactionOrderingProcessorIntegrationTest {
     val ordered = TransactionOrderingProcessor.ordersOf(
       TransactionOrderingProcessor.orderTransactions(input.toDF(), 10 * 60 * 1000L, 60 * 1000L))
     val collect: (Dataset[OrderStream], Long) => Unit = (ds, batchId) => {
-      val keys = ds.collect().toSeq.map(o => s"${o.xid}:${o.csn}")
+      val orders = ds.collect().toSeq
+      val keys = orders.map(o => s"${o.xid}:${o.csn}")
+      orders.foreach(o => CollectedBatches.lineItemCounts.add((s"${o.xid}:${o.csn}", o.lineItems.size)))
       if (keys.nonEmpty) CollectedBatches.batches.add((batchId, keys))
     }
     ordered.writeStream
@@ -185,6 +192,31 @@ class TransactionOrderingProcessorIntegrationTest {
       // T1 completes after the restart: T1 then T2, never T2 first.
       awaitProcessed(q2, input.addData(lineItemRow("t1", "100", "p11", 11, 1)))
       assertThat(emittedInOrder.asJava).containsExactly("t0:50", "t1:100", "t2:200")
+    } finally q2.stop()
+  }
+
+  @Test
+  def transactionBufferedAcrossBatchesAndARestartIsEmittedOnceWhole(): Unit = {
+    val input = newStream()
+    val checkpoint = newCheckpoint()
+    def item(i: Int) = lineItemRow("t5", "500", s"p$i", i, 5)
+
+    val q1 = start(input, checkpoint)
+    try {
+      awaitProcessed(q1, input.addData(markerRow("t5", "500", 6), item(1), item(2)))
+      awaitProcessed(q1, input.addData(item(3), item(4)))
+      assertThat(emittedInOrder.asJava).isEmpty()
+    } finally q1.stop()
+
+    val q2 = start(input, checkpoint)
+    try {
+      // A redelivered event from before the restart is still recognised as a duplicate.
+      awaitProcessed(q2, input.addData(item(2), item(5)))
+      assertThat(emittedInOrder.asJava).isEmpty()
+
+      awaitProcessed(q2, input.addData(item(6)))
+      assertThat(emittedInOrder.asJava).containsExactly("t5:500")
+      assertThat(CollectedBatches.lineItemCounts.asScala.toSeq.asJava).containsExactly(("t5:500", 6))
     } finally q2.stop()
   }
 
