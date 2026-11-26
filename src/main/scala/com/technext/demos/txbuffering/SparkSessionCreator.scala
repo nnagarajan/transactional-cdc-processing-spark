@@ -14,7 +14,26 @@ import org.apache.spark.sql.SparkSession
 
 object SparkSessionCreator extends Logging {
 
+  /**
+   * Spark's vectorized Parquet reader for nested columns fails with
+   * `NullPointerException: Cannot store to byte/boolean array because "this.nulls" is null`
+   * when Delta's v2 (kernel) connector reads `order_stream`, whose `orders`, `orderDetails` and
+   * `lineItems` are arrays of structs. UC catalog-managed tables can only be read through that
+   * connector (`spark.databricks.delta.v2.enableMode = NONE` is refused with
+   * DELTA_PATH_BASED_ACCESS_TO_CATALOG_MANAGED_TABLE_BLOCKED), so nested vectorization is turned
+   * off instead. Top-level columns stay vectorized. A value given with `--conf` is kept.
+   */
+  val NestedVectorizedReader = "spark.sql.parquet.enableNestedColumnVectorizedReader"
+
   def getSpark(config: Config): SparkSession = {
+    val spark = create(config)
+    if (!new SparkConf().contains(NestedVectorizedReader)) {
+      spark.conf.set(NestedVectorizedReader, "false")
+    }
+    spark
+  }
+
+  private def create(config: Config): SparkSession = {
     val hasMaster = new SparkConf().getOption("spark.master").isDefined
 
     if (hasMaster) {

@@ -42,6 +42,7 @@ Current state table with flattened order attributes, single orderDetails struct 
 - **schema_evolution.sql** - Examples of schema evolution operations
 - **oracle-ddl.sql** - Oracle source table DDL
 - **simulate-grouped-markers.sql** - Oracle script that reproduces the grouped-delivery marker bug (`GROUPTRANSOPS 1000`, several CSNs in one Replicat transaction); steps are in its header
+- **e2e/e2e-setup.sql**, **e2e/e2e-cleanup.sql** - Oracle ground-truth log tables for the end-to-end suites, and removal of a run's test data ([docs/E2E-TESTING.md](../docs/E2E-TESTING.md))
 - **views.sql** - Temporary views over both tables (not run by SeedJob; the Unity Catalog Spark connector has no view support before Spark 4.2)
 
 ## Usage

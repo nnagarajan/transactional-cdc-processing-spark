@@ -222,12 +222,41 @@ spark-sql \
   -f db/query_table.sql
 ```
 
+## End-to-End Tests
+
+Three suites run against the live stack (Oracle, GoldenGate, Kafka, Unity Catalog, both apps running) and compare Unity Catalog with what was committed in Oracle. They run only with the `e2e` profile; `./mvnw package` never connects to Oracle. Details, settings and reports: [docs/E2E-TESTING.md](docs/E2E-TESTING.md).
+
+| Script | Purpose |
+|--------|---------|
+| [db/e2e/e2e-setup.sql](db/e2e/e2e-setup.sql) | Creates the ground-truth log tables `e2e_tx_log` and `e2e_tx_orders` (once, idempotent) |
+| [db/e2e/e2e-cleanup.sql](db/e2e/e2e-cleanup.sql) | Deletes the test data of one run or all runs, then shrinks the tables to free the space; `--drop` also drops the log tables |
+| [scripts/reset-pipeline.sh](scripts/reset-pipeline.sh) | Empties `order_stream`, `orders_current` and `dropped_events` and deletes both checkpoints, so the pipeline reprocesses from the start of the topics; both apps must be stopped |
+| [scripts/purge-topics.sh](scripts/purge-topics.sh) | Purges the four Kafka topics only; both apps and the `kc`/`rep3` replicats must be stopped |
+
+```bash
+# once
+sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-setup.sql
+
+# run the suites (both apps must be running)
+./mvnw -Pe2e verify -Dit.test=CorrectnessOrderingIT   # 10–20 concurrent sessions, every check
+./mvnw -Pe2e verify -Dit.test=CommitLatencyIT         # 200 orders, latency per order
+./mvnw -Pe2e verify -Dit.test=PerformanceIT           # sustained 100,000 events/min, then a bulk phase
+./mvnw -Pe2e verify                                   # all of them
+
+# clean up the test data in Oracle (one run, or ALL)
+sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-cleanup.sql <runId>
+sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-cleanup.sql ALL
+```
+
+Reports are written to `target/e2e-reports/<suite>-<runId>/` (`summary.md`, `transactions.csv`, `latency.csv`, `failures.csv`). The `appuser`/`appuser` login is the local dev default; override it with `E2E_ORACLE_USER` and `E2E_ORACLE_PASSWORD`.
+
 ## Documentation
 
 - **[PIPELINE_DIAGRAMS.md](docs/PIPELINE_DIAGRAMS.md)** - Mermaid diagrams illustrating both pipelines and data flows
 - **[IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed architecture, configuration options, and troubleshooting guide
 - **[SCD_TYPE1_README.md](docs/SCD_TYPE1_README.md)** - SCD Type 1 merge application documentation
 - **[oracle-schema.md](docs/oracle-schema.md)** - Oracle source table schema definitions
+- **[E2E-TESTING.md](docs/E2E-TESTING.md)** - End-to-end suites against the running stack: correctness and ordering, performance, per-order commit latency (`./mvnw -Pe2e verify`)
 
 ## SCD Type 1 Maintenance
 

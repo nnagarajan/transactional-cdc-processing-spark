@@ -113,6 +113,7 @@ object ScdType1Merger extends Logging {
    * When multiple order_stream records exist for the same orderId in a single batch
    * (e.g., order creation + child-only update), this method merges them:
    * - Order-level fields: from the row with the highest order version
+   * - xid, csn, dwhProcessedTs: from the row with the highest CSN (may be a child-only row)
    * - orderDetails: non-null struct with the highest version across all rows
    * - lineItems: merged from all rows, deduped by lineItemId (highest version wins)
    */
@@ -156,7 +157,15 @@ object ScdType1Merger extends Logging {
     val bestOrderRow = flattened
       .withColumn("_rn", row_number().over(w))
       .filter("_rn = 1")
-      .drop("_rn", "orderDetails", "lineItems")
+      .drop("_rn", "orderDetails", "lineItems", "xid", "csn", "dwhProcessedTs")
+
+    // Step 1b: Transaction context from the latest commit (highest CSN), which can be a child-only
+    // row without an order version, so it is chosen independently of the order fields
+    val latestTx = flattened
+      .withColumn("_rn", row_number().over(
+        Window.partitionBy("orderId").orderBy(col("csn").cast("decimal(38,0)").desc)))
+      .filter("_rn = 1")
+      .select("orderId", "xid", "csn", "dwhProcessedTs")
 
     // Step 2: Pick best orderDetails across all rows (non-null, highest version)
     val bestDetails = flattened
@@ -173,8 +182,9 @@ object ScdType1Merger extends Logging {
       .agg(flatten(collect_list(col("lineItems"))).as("_allLineItems"))
       .selectExpr("orderId", s"${dedupExpr("_allLineItems", "lineItemId")} as lineItems")
 
-    // Step 4: Combine order fields + best detail + merged line items
-    bestOrderRow
+    // Step 4: Combine transaction context + order fields + best detail + merged line items
+    latestTx
+      .join(bestOrderRow, Seq("orderId"))
       .join(bestDetails, Seq("orderId"), "left")
       .join(mergedLineItems, Seq("orderId"), "left")
   }
