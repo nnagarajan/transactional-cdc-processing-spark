@@ -78,6 +78,8 @@ Every Delta commit to a managed table goes through the catalog server, adding an
 
 ## How to measure
 
+The end-to-end suites in [E2E-TESTING.md](E2E-TESTING.md) do this measurement. `PerformanceIT` runs the target load (100,000 events per minute) and a 100-order bulk phase, and reports the committed rate, catch-up time and latency percentiles. `CommitLatencyIT` reports each of 200 orders' latency from the Oracle commit to `order_stream` and `orders_current`. The manual steps below remain useful for watching a running pipeline.
+
 Load-test at the target rate, for example with a PL/SQL loop issuing about 300 small commits per second, and read the progress each streaming query reports:
 
 ```scala

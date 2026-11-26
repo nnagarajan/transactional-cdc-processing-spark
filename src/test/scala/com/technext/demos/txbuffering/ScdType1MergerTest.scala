@@ -135,4 +135,35 @@ class ScdType1MergerTest {
     assertThat(row.getAs[String]("orderStatus")).isEqualTo("SHIPPED")
     assertThat(row.getAs[String]("csn")).isEqualTo("120")
   }
+
+  /** Found by CorrectnessOrderingIT: a whole workload in one batch left 40 orders at an older CSN. */
+  @Test
+  def childOnlyChangeAfterOrderUpdateInOneBatchMovesTransactionContext(): Unit = {
+    merge(stream(1, "x0", "50", Seq(order(1, 1)), Seq(item(1, 1, 1)))) // creates the table
+
+    merge(
+      stream(1, "a", "100", Seq(order(1, 2, "PACKED")), Seq.empty),
+      stream(1, "b", "120", Seq.empty, Seq(item(1, 1, 2))))
+
+    val row = current(1)
+    assertThat(row.getAs[String]("orderStatus")).isEqualTo("PACKED")
+    assertThat(row.getAs[Double]("version")).isEqualTo(2.0)
+    assertThat(row.getAs[String]("csn")).isEqualTo("120")
+    assertThat(row.getAs[String]("xid")).isEqualTo("b")
+    assertThat(row.getAs[String]("dwhProcessedTs")).isEqualTo("ts-120")
+    assertThat(lineItemVersions(row).asJava).containsEntry(1.0, 2.0)
+  }
+
+  @Test
+  def firstBatchTakesTransactionContextFromHighestCsn(): Unit = {
+    merge(
+      stream(3, "a", "100", Seq(order(3, 1)), Seq(item(30, 3, 1))),
+      stream(3, "b", "130", Seq.empty, Seq(item(30, 3, 2))))
+
+    val row = current(3)
+    assertThat(row.getAs[Double]("version")).isEqualTo(1.0)
+    assertThat(row.getAs[String]("csn")).isEqualTo("130")
+    assertThat(row.getAs[String]("xid")).isEqualTo("b")
+    assertThat(lineItemVersions(row).asJava).containsEntry(30.0, 2.0)
+  }
 }
