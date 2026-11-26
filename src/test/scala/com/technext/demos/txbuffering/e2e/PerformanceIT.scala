@@ -87,18 +87,18 @@ class PerformanceIT {
     val p95 = Percentiles.nearestRank(rows.map(_.processedMs), 95)
 
     val target = if (name.startsWith("Sustained")) f"${p.eventsPerMinute}%,d events/min (${Workload.txPerSecond(p.eventsPerMinute, p.mix)}%.1f tx/s)" else "unpaced"
-    r.section(name,
-      s"""| Metric | Value |
-         ||---|---|
-         || transactions committed | ${truth.log.size} |
-         || events committed | ${truth.events} |
-         || commit window | ${f"$window%.1f"} s |
-         || target | $target |
-         || achieved | ${f"${truth.events / window * 60}%,.0f"} events/min (${f"${truth.log.size / window}%.1f"} tx/s) |
-         || catch-up after last commit | ${catchUp.toMillis} ms |
-         |${lateSlots.map(l => s"| pacer slots missed by more than one interval | $l |\n").getOrElse("")}
-         |${r.latencyTable(rows)}
-         |""".stripMargin)
+    // Built from lines, not stripMargin: stripMargin would also strip the leading `|` of every table row
+    val metrics = Seq(
+      "| Metric | Value |",
+      "|---|---|",
+      s"| transactions committed | ${truth.log.size} |",
+      s"| events committed | ${truth.events} |",
+      f"| commit window | $window%.1f s |",
+      s"| target | $target |",
+      f"| achieved | ${truth.events / window * 60}%,.0f events/min (${truth.log.size / window}%.1f tx/s) |",
+      s"| catch-up after last commit | ${catchUp.toMillis} ms |") ++
+      lateSlots.map(l => s"| pacer slots missed by more than one interval | $l |")
+    r.section(name, metrics.mkString("\n") + "\n\n" + r.latencyTable(rows))
     r.latency(rows, s"latency-${name.split(' ').head.toLowerCase}.csv")
 
     p.maxP95ProcessedLatency.foreach { max =>

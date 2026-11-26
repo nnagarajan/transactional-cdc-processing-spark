@@ -8,15 +8,23 @@ import org.junit.jupiter.api.Test
 
 class E2eConfigTest {
 
-  private def withOverrides(overrides: String): E2eConfig = {
+  /**
+   * e2e.conf as written, without the JVM system properties that ConfigFactory.load layers on top:
+   * Maven passes `-D` options such as `-De2e.seed=42` into the test JVM.
+   */
+  private def fileOnly: com.typesafe.config.Config = {
     ConfigFactory.invalidateCaches()
-    val config = ConfigFactory.parseString(overrides).withFallback(ConfigFactory.load("e2e")).resolve()
-    E2eConfig.from(config, Map.empty, Map.empty)
+    ConfigFactory.parseResources("e2e.conf").withFallback(ConfigFactory.defaultReference()).resolve()
   }
+
+  private def withOverrides(overrides: String): E2eConfig =
+    E2eConfig.from(ConfigFactory.parseString(overrides).withFallback(fileOnly).resolve(), Map.empty, Map.empty)
 
   @Test
   def defaultsLoad(): Unit = {
-    val c = E2eConfig.from(ConfigFactory.load("e2e"), Map.empty, Map.empty)
+    val c = E2eConfig.from(fileOnly, Map.empty, Map.empty)
+
+    assertThat(c.seed).isEqualTo(0L)
 
     assertThat(c.oracle.url).isEqualTo("jdbc:oracle:thin:@//localhost:1521/ORCLPDB")
     assertThat(c.oracle.user).isEqualTo("appuser")
@@ -36,7 +44,7 @@ class E2eConfigTest {
 
   @Test
   def environmentOverridesTheFileAndSystemPropertiesOverrideBoth(): Unit = {
-    val base = ConfigFactory.load("e2e")
+    val base = fileOnly
     val env = Map(E2eConfig.UserEnv -> "envuser", E2eConfig.PasswordEnv -> "envpass")
 
     val fromEnv = E2eConfig.from(base, env, Map.empty)

@@ -142,7 +142,7 @@ The latency columns:
 |---|---|
 | `processed_latency_ms` | Oracle commit → `dwhProcessedTs`. The pipeline assembled and emitted the transaction; this is taken before the Delta write |
 | `order_stream_visible_latency_ms` | Oracle commit → the Delta commit that made the row readable in `order_stream` |
-| `orders_current_visible_latency_ms` | Oracle commit → the Delta commit of `orders_current` that holds this CSN (latency and correctness runs) |
+| `orders_current_visible_latency_ms` | Oracle commit → the Delta commit of `orders_current` that holds this CSN (latency run only; the correctness and performance runs leave it empty) |
 | `client_ack_ms` | Oracle timestamp → `commit()` returning in the client. It should be a few ms; large values mean a clock or connection problem |
 
 The difference between `processed` and `order_stream_visible` is the Delta write and UC commit. The difference between `order_stream_visible` and `orders_current_visible` is `ScdType1MergeApp`. Compare the percentiles with [PERFORMANCE-ESTIMATES.md](PERFORMANCE-ESTIMATES.md), where the estimates are 10–20 s to `order_stream` and 15–40 s to `orders_current`.
@@ -156,6 +156,8 @@ sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-cleanup.sql <runId>
 sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-cleanup.sql ALL       # every run
 sqlplus appuser/appuser@//localhost:1521/ORCLPDB @db/e2e/e2e-cleanup.sql --drop    # every run, and drop the log tables
 ```
+
+After the deletes, the script shrinks `orders`, `order_details`, `order_line_items` and the two log tables with their indexes (`ENABLE ROW MOVEMENT`, then `SHRINK SPACE CASCADE`), and prints each table's size before and after. Tables outside an ASSM tablespace are skipped. Shrinking moves rows, so the `ORA_ROWSCN` of the rows that remain changes: a kept run's report can't be rebuilt from `e2e_tx_log` afterwards. Run the cleanup while no suite is running.
 
 `ext04` ignores deletes, so cleanup doesn't touch the pipeline. The rows in `order_stream`, `orders_current` and `dropped_events` stay. Use [`scripts/reset-pipeline.sh`](../scripts/reset-pipeline.sh) to start the pipeline clean. Many runs make `orders_current` larger, and its MERGE slower.
 

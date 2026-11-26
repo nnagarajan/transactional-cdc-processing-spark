@@ -20,8 +20,8 @@
 ## 3. Suite A: correctness and ordering
 
 - [x] 3.1 Implement the checks as pure functions over the ground truth and the UC rows, one per spec requirement: completeness and content, no phantom output, commit order across versions, per-order versions, current state against Oracle (read through `OracleSession`), no dropped run data, plus the extra check that `dwhProcessedTs` is non-decreasing. Verify with `CorrectnessChecksTest`, which, for each check, gives a passing input and a crafted failing input (missing, duplicate, out-of-order commit, version regression, stale `orders_current`, phantom rollback, dropped row), and asserts the reported transactions
-- [ ] 3.2 Implement `CorrectnessOrderingIT`, which runs pre-flight, the setup of the hot orders, S concurrent sessions with the D8 mix (the first six transactions cycle through every kind), the catch-up on both tables, then all checks from 3.1 and the report. Verify with a run on the live stack: the run passes, and the summary shows the session count in [10, 20], the seed, all kinds per session and zero dropped rows
-- [ ] 3.3 Verify that the suite catches real faults:
+- [x] 3.2 Implement `CorrectnessOrderingIT`, which runs pre-flight, the setup of the hot orders, S concurrent sessions with the D8 mix (the first six transactions cycle through every kind), the catch-up on both tables, then all checks from 3.1 and the report. Verify with a run on the live stack: the run passes, and the summary shows the session count in [10, 20], the seed, all kinds per session and zero dropped rows
+- [x] 3.3 Verify that the suite catches real faults:
   - Stop `ScdType1MergeApp` before a run, and check that the pre-flight fails and names it.
   - Run with `e2e.catch-up-timeout = 1 s`, and check that the timeout lists the missing transactions.
   - Re-run with the same seed, and check that the kind sequences in `transactions.csv` are the same.
@@ -29,12 +29,12 @@
 ## 4. Suite B: performance and latency
 
 - [x] 4.1 Implement the F1–F7 workload driver with weighted flavors, the fixed-rate pacer and the derivation of the transaction rate from the target events per minute and the mix's average events per transaction (D8). Verify with a unit test: the default mix averages about 6.35 events/tx, 100,000 events/min gives about 262 tx/s, and the pacer's schedule doesn't drift when one commit is slow
-- [ ] 4.2 Implement `PerformanceIT`, which runs pre-flight, the sustained phase (default 16 sessions, 300 s), the catch-up and completeness check, the bulk phase (100 × F6 across 10 sessions), the catch-up and completeness check, and then the throughput, catch-up and latency percentile report per phase, plus the optional thresholds. Verify with a run on the live stack: both phases are complete, and the summary shows target versus achieved rate, catch-up time and p50/p95/p99/max for each phase
-- [ ] 4.3 Implement `CommitLatencyIT`, which runs pre-flight (pipeline idle), one session with 200 F2 transactions at `e2e.latency.interval`, the catch-up on `order_stream` and `orders_current`, and `latency.csv` with one row per order (commit, client ack, `dwhProcessedTs`, the two visible timestamps, the three latencies), plus a percentile summary that states the visibility resolution. Verify with a run on the live stack: `latency.csv` has 200 rows, every latency is positive, and `clientAckTs − commitTs` is under 1 s for every row
+- [x] 4.2 Implement `PerformanceIT`, which runs pre-flight, the sustained phase (default 16 sessions, 300 s), the catch-up and completeness check, the bulk phase (100 × F6 across 10 sessions), the catch-up and completeness check, and then the throughput, catch-up and latency percentile report per phase, plus the optional thresholds. Verify with a run on the live stack: both phases are complete, and the summary shows target versus achieved rate, catch-up time and p50/p95/p99/max for each phase
+- [x] 4.3 Implement `CommitLatencyIT`, which runs pre-flight (pipeline idle), one session with 200 F2 transactions at `e2e.latency.interval`, the catch-up on `order_stream` and `orders_current`, and `latency.csv` with one row per order (commit, client ack, `dwhProcessedTs`, the two visible timestamps, the three latencies), plus a percentile summary that states the visibility resolution. Verify with a run on the live stack: `latency.csv` has 200 rows, every latency is positive, and `clientAckTs − commitTs` is under 1 s for every row
 
 ## 5. Documentation
 
-- [ ] 5.1 Write `docs/E2E-TESTING.md`. Cover:
+- [x] 5.1 Write `docs/E2E-TESTING.md`. Cover:
   - prerequisites (the running stack, `db/e2e/e2e-setup.sql`, the default `appuser`/`appuser` login and how to override it)
   - how to run each suite, and every `e2e.conf` setting
   - what each check proves
