@@ -13,6 +13,17 @@ Before its query starts, each stage SHALL compare the schema of each table it wr
 - **WHEN** a job's current table does not exist
 - **THEN** stage 2 fails before the query starts, naming the table
 
+### Requirement: Table DDL is written from the job config
+A command SHALL write a job's stage 1 and stage 2 CREATE TABLE scripts as `*.deltalake.sql` files that the seed job can run, using only the job config and shared defaults. The scripts SHALL use the `{{CATALOG_SCHEMA}}` placeholder and specify no storage location. The command SHALL NOT connect to Oracle.
+
+#### Scenario: Seeding written DDL
+- **WHEN** the seed job runs the scripts written for a job
+- **THEN** it creates that job's stream and current tables as managed tables whose schemas equal the schemas the job derives at startup
+
+#### Scenario: Orders DDL
+- **WHEN** the command runs for the shipped orders job
+- **THEN** the scripts create tables whose schemas equal the existing `order_stream` and `orders_current` schemas
+
 ## MODIFIED Requirements
 
 ### Requirement: Tables are catalog-managed

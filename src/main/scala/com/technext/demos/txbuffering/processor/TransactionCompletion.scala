@@ -7,62 +7,54 @@
  */
 package com.technext.demos.txbuffering.processor
 
+import java.{util => ju}
+
 import org.apache.logging.log4j.scala.Logger
 
 import com.technext.demos.txbuffering.model.generic.TransactionMetadata
 
-/** Received or expected event counts for the tracked tables. */
-final case class TableCounts(orders: Int, details: Int, lineItems: Int)
-
-object TableCounts {
-  val Zero: TableCounts = TableCounts(0, 0, 0)
-
-  /** The counts a marker declares for the tracked tables (zero when there is no marker). */
-  def expectedBy(metadata: TransactionMetadata): TableCounts =
-    if (metadata == null) Zero
-    else TableCounts(
-      metadata.getEventCountFor(TransactionCompletion.Orders),
-      metadata.getEventCountFor(TransactionCompletion.OrderDetails),
-      metadata.getEventCountFor(TransactionCompletion.OrderLineItems))
-}
-
 /**
  * Completion rules shared by the buffered summary ([[TransactionSummary]]) and the assembled
- * transaction ([[TransactionState]]), so both decide and report progress identically.
+ * transaction ([[TransactionState]]), so both decide and report progress identically. Counts are
+ * per tracked table (name without schema); a table missing from a count map counts as zero.
  */
 object TransactionCompletion {
   private val log: Logger = Logger(classOf[TransactionState])
 
-  val Orders = "ORDERS"
-  val OrderDetails = "ORDER_DETAILS"
-  val OrderLineItems = "ORDER_LINE_ITEMS"
-
-  /** Whether events of this table (name without schema) are tracked. */
-  def isTracked(tableName: String): Boolean =
-    tableName == Orders || tableName == OrderDetails || tableName == OrderLineItems
+  /** The counts a marker declares for the tracked tables; counts for other tables are ignored. */
+  def expectedBy(metadata: TransactionMetadata, tracked: Seq[String]): ju.Map[String, Integer] = {
+    val m = new ju.LinkedHashMap[String, Integer]()
+    if (metadata != null) tracked.foreach(t => m.put(t, metadata.getEventCountFor(t)))
+    m
+  }
 
   /**
-   * Complete when the marker has arrived and each table has exactly the declared number of
+   * Complete when the marker has arrived and each tracked table has exactly the declared number of
    * distinct events. More events than declared means the marker and data disagree: this is
    * logged and treated as incomplete, so it surfaces as a blocked transaction instead of
    * being emitted with the wrong contents.
    */
-  def isComplete(xid: String, csn: String, hasMarker: Boolean, expected: TableCounts, received: TableCounts): Boolean = {
+  def isComplete(xid: String, csn: String, hasMarker: Boolean, expected: ju.Map[String, Integer],
+      received: ju.Map[String, Integer], tracked: Seq[String]): Boolean = {
     if (!hasMarker) return false
-    if (isOverfilled(expected, received)) {
-      log.error(s"Transaction $xid:$csn has more events than its marker declares. ${progress(expected, received)}")
+    if (isOverfilled(expected, received, tracked)) {
+      log.error(s"Transaction $xid:$csn has more events than its marker declares. ${progress(expected, received, tracked)}")
       return false
     }
-    received == expected
+    tracked.forall(t => count(received, t) == count(expected, t))
   }
 
-  def isOverfilled(expected: TableCounts, received: TableCounts): Boolean =
-    received.orders > expected.orders ||
-      received.details > expected.details ||
-      received.lineItems > expected.lineItems
+  def isOverfilled(expected: ju.Map[String, Integer], received: ju.Map[String, Integer], tracked: Seq[String]): Boolean =
+    tracked.exists(t => count(received, t) > count(expected, t))
 
-  def progress(expected: TableCounts, received: TableCounts): String =
-    s"Orders: ${received.orders}/${expected.orders}, " +
-      s"Details: ${received.details}/${expected.details}, " +
-      s"LineItems: ${received.lineItems}/${expected.lineItems}"
+  /** For example `ORDERS: 1/1, ORDER_DETAILS: 0/1, ORDER_LINE_ITEMS: 1/3` (received/expected). */
+  def progress(expected: ju.Map[String, Integer], received: ju.Map[String, Integer], tracked: Seq[String]): String =
+    tracked.map(t => s"$t: ${count(received, t)}/${count(expected, t)}").mkString(", ")
+
+  def count(counts: ju.Map[String, Integer], table: String): Int =
+    if (counts == null) 0 else Option(counts.get(table)).map(_.intValue).getOrElse(0)
+
+  /** Per-table counts in tracked order. */
+  def counts(counts: ju.Map[String, Integer], tracked: Seq[String]): Seq[(String, Int)] =
+    tracked.map(t => t -> count(counts, t))
 }

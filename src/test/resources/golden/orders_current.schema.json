@@ -1,0 +1,379 @@
+{
+  "type" : "struct",
+  "fields" : [ {
+    "name" : "xid",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Oracle transaction ID from last update"
+    }
+  }, {
+    "name" : "csn",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Oracle commit sequence number from last update"
+    }
+  }, {
+    "name" : "dwhProcessedTs",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Timestamp of last update to this record"
+    }
+  }, {
+    "name" : "orderId",
+    "type" : "double",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Primary order identifier (unique key)"
+    }
+  }, {
+    "name" : "orderRef",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order reference"
+    }
+  }, {
+    "name" : "version",
+    "type" : "double",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order version number"
+    }
+  }, {
+    "name" : "orderDate",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order date"
+    }
+  }, {
+    "name" : "orderTs",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order timestamp"
+    }
+  }, {
+    "name" : "orderStatus",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order status"
+    }
+  }, {
+    "name" : "orderType",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order type"
+    }
+  }, {
+    "name" : "totalAmount",
+    "type" : "double",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current total order amount"
+    }
+  }, {
+    "name" : "currency",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order currency"
+    }
+  }, {
+    "name" : "customerId",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current customer identifier"
+    }
+  }, {
+    "name" : "shippingAddressId",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current shipping address identifier"
+    }
+  }, {
+    "name" : "createdTs",
+    "type" : "string",
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Record creation timestamp"
+    }
+  }, {
+    "name" : "orderBefore",
+    "type" : {
+      "type" : "struct",
+      "fields" : [ {
+        "name" : "orderId",
+        "type" : "double",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "orderRef",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "version",
+        "type" : "double",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "orderDate",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "orderTs",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "orderStatus",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "orderType",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "totalAmount",
+        "type" : "double",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "currency",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "customerId",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "shippingAddressId",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "createdTs",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      } ]
+    },
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Before image from last change"
+    }
+  }, {
+    "name" : "orderDetails",
+    "type" : {
+      "type" : "struct",
+      "fields" : [ {
+        "name" : "orderId",
+        "type" : "double",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "version",
+        "type" : "double",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "shippingMethod",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "trackingNumber",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "shippedTs",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "estimatedDeliveryDate",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "carrier",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "deliveryStatus",
+        "type" : "string",
+        "nullable" : true,
+        "metadata" : { }
+      }, {
+        "name" : "before",
+        "type" : {
+          "type" : "struct",
+          "fields" : [ {
+            "name" : "orderId",
+            "type" : "double",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "version",
+            "type" : "double",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "shippingMethod",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "trackingNumber",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "shippedTs",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "estimatedDeliveryDate",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "carrier",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          }, {
+            "name" : "deliveryStatus",
+            "type" : "string",
+            "nullable" : true,
+            "metadata" : { }
+          } ]
+        },
+        "nullable" : true,
+        "metadata" : { }
+      } ]
+    },
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Current order details (latest version)"
+    }
+  }, {
+    "name" : "lineItems",
+    "type" : {
+      "type" : "array",
+      "elementType" : {
+        "type" : "struct",
+        "fields" : [ {
+          "name" : "lineItemId",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "orderId",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "version",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "productId",
+          "type" : "string",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "itemQty",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "itemPrice",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "itemAmount",
+          "type" : "double",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "itemCurrency",
+          "type" : "string",
+          "nullable" : true,
+          "metadata" : { }
+        }, {
+          "name" : "before",
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "name" : "lineItemId",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "orderId",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "version",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "productId",
+              "type" : "string",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "itemQty",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "itemPrice",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "itemAmount",
+              "type" : "double",
+              "nullable" : true,
+              "metadata" : { }
+            }, {
+              "name" : "itemCurrency",
+              "type" : "string",
+              "nullable" : true,
+              "metadata" : { }
+            } ]
+          },
+          "nullable" : true,
+          "metadata" : { }
+        } ]
+      },
+      "containsNull" : true
+    },
+    "nullable" : true,
+    "metadata" : {
+      "comment" : "Array of current order line items (each at its latest version)"
+    }
+  } ]
+}

@@ -146,6 +146,16 @@
   <build>
     <sourceDirectory>src/main/scala</sourceDirectory>
     <testSourceDirectory>src/test/scala</testSourceDirectory>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- Job configs; bundled so that the orders job runs without -Dconfig.file -->
+      <resource>
+        <directory>jobs</directory>
+        <targetPath>jobs</targetPath>
+      </resource>
+    </resources>
     <pluginManagement>
       <plugins>
         <plugin>

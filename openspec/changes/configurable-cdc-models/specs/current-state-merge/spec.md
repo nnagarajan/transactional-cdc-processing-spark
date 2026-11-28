@@ -3,15 +3,19 @@
 ## ADDED Requirements
 
 ### Requirement: Current table shape follows the model
-Each job's current table SHALL hold one row per root key. A row SHALL contain:
+Each job's current table SHALL hold one row per root key, which may be compound. A row SHALL contain:
 - `xid`, `csn` and `dwhProcessedTs`
-- the root entity's columns at top level, with its before image as one struct column, named `<root entity>Before` by default and overridable
+- the root entity's columns at top level, including every root key column, with its before image as one struct column, named `<root entity>Before` by default and overridable
 - one struct per one-to-one child
 - one array per one-to-many child
 
 #### Scenario: Orders current shape
 - **WHEN** the current table schema is derived for the shipped orders job
 - **THEN** it has top-level order columns, `orderBefore`, an `orderDetails` struct and a `lineItems` array, matching the existing `orders_current` table
+
+#### Scenario: Compound root key
+- **WHEN** the root key is `[REGION, ORDER_NO]` and batches deliver changes for `(EU, 7)` and `(US, 7)`
+- **THEN** the current table holds two rows, one per key, and a change to `(EU, 7)` never updates the `(US, 7)` row
 
 ### Requirement: Entities without a version use commit order
 For an entity that has no version column, the entity's change from the transaction with the highest numeric `csn` SHALL count as its latest version. For each such entity, the current table SHALL store the `csn` of the change it holds in a `changeCsn` field: inside the child's struct or element, or at top level for the root. Entities that have a version column SHALL NOT get this field.
@@ -27,7 +31,7 @@ For an entity that has no version column, the entity's change from the transacti
 ## MODIFIED Requirements
 
 ### Requirement: Latest version wins per entity
-For each root key, a job's current table SHALL hold the root attributes, each one-to-one child and each one-to-many child's elements with the highest `version` seen for each entity key. The root and one-to-one children SHALL be keyed by the root key. Elements of a one-to-many child SHALL be keyed by the child's primary key.
+For each root key, a job's current table SHALL hold the root attributes, each one-to-one child and each one-to-many child's elements with the highest `version` seen for each entity key. The root and one-to-one children SHALL be keyed by the root key. Elements of a one-to-many child SHALL be keyed by the key columns the child declares.
 
 #### Scenario: Older version arrives after newer
 - **WHEN** `orders_current` holds line item A at version 3 and a batch delivers line item A at version 2

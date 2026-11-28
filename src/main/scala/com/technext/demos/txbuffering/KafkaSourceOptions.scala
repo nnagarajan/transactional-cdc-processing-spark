@@ -13,11 +13,15 @@ import scala.util.Try
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.typesafe.config.Config
 
+import com.technext.demos.txbuffering.model.spec.{JobModel, ModelResolver}
+
 /**
- * Builds the Spark Kafka source options for one topic.
+ * Builds the Spark Kafka source options for one source of a job: an entity of its model, keyed by
+ * the entity's name, or the metadata topic, keyed `transaction-metadata`. Unknown keys under
+ * `job.kafka.starting-offsets` are rejected by [[ModelResolver]].
  *
  * Starting position (applies only when the query starts on a new checkpoint):
- *   - `job.kafka.starting-offsets.<topic-key>` if set, otherwise `kafka.starting-offsets`
+ *   - `job.kafka.starting-offsets.<source key>` if set, otherwise `kafka.starting-offsets`
  *   - value: `earliest`, `latest`, or a JSON map of partition to offset, such as `{"0":12345}`.
  *     A partition map is wrapped as `{"<topic>":{...}}`, so the topic name is never typed by hand.
  *
@@ -37,14 +41,21 @@ object KafkaSourceOptions {
 
   private val mapper = new ObjectMapper()
 
-  /** Options for the topic configured at `job.kafka.topics.<topicKey>`. */
-  def forTopic(config: Config, topicKey: String): SourceOptions = {
-    val topic = config.getString(s"job.kafka.topics.$topicKey")
-    val overridePath = s"$TopicStartingOffsetsPath.$topicKey"
+  /** A job's Kafka sources: source key -> (topic, options), the entities first, then the metadata topic. */
+  def forJob(config: Config, model: JobModel): Seq[(String, String, SourceOptions)] =
+    (model.entities.map(e => e.name -> e.topic) :+ (ModelResolver.MetadataSourceKey -> metadataTopic(config)))
+      .map { case (key, topic) => (key, topic, forTopic(config, key, topic)) }
+
+  /** The shared transaction metadata topic, `job.kafka.metadata-topic`. */
+  def metadataTopic(config: Config): String = config.getString("job.kafka.metadata-topic")
+
+  /** Options for the source with the given key, reading `topic`. */
+  def forTopic(config: Config, sourceKey: String, topic: String): SourceOptions = {
+    val overridePath = s"$TopicStartingOffsetsPath.$sourceKey"
     val (source, value) =
       if (config.hasPath(overridePath)) (overridePath, config.getString(overridePath))
       else (SharedStartingOffsetsPath, config.getString(SharedStartingOffsetsPath))
-    SourceOptions(startingOffsets(value, topic, s"$source (topic key '$topicKey')"), maxOffsetsPerTrigger(config))
+    SourceOptions(startingOffsets(value, topic, s"$source (source '$sourceKey')"), maxOffsetsPerTrigger(config))
   }
 
   /** Validates a starting position and returns it in Spark's `startingOffsets` form. */

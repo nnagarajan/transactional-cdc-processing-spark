@@ -7,19 +7,20 @@
  */
 package com.technext.demos.txbuffering.processor
 
+import java.time.Instant
+
 import org.apache.logging.log4j.scala.Logger
-import org.apache.spark.sql.{Dataset, Encoder, Encoders, Row}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.streaming.{ExpiredTimerInfo, MapState, OutputMode, StatefulProcessor, TimeMode, TimerValues, TTLConfig, ValueState}
 
 import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, DroppedEvent}
-import com.technext.demos.txbuffering.model.order.OrderStream
 
 /**
  * Spark adapter for [[TransactionSequencer]]. All rows share one key, so this processor sees
  * every in-flight transaction and can emit them in commit order.
  *
- * State: a summary per buffered transaction (`txs`), each buffered event once (`events`), the
+ * State: a summary per buffered transaction (`transactions`), each buffered event once (`events`), the
  * buffered `(table, pos)` pairs for duplicate detection (`positions`), an emission queue keyed by
  * sequence number (`queue`), and a cursor. Every read and write touches one small entry, so a
  * large transaction costs time linear in its size.
@@ -27,23 +28,20 @@ import com.technext.demos.txbuffering.model.order.OrderStream
  * A single processing-time timer is kept registered while transactions are queued, so a
  * blocked head is re-checked and alerted on even when no new input arrives.
  */
-class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalMs: Long,
+class TransactionOrderingProcessor(trackedTables: Seq[String], blockedAlertThresholdMs: Long, checkIntervalMs: Long,
     summarizeReplays: Boolean = false) extends StatefulProcessor[String, Row, SequencerOutput] {
 
   @transient private var txs: MapState[String, TransactionSummary] = _
   @transient private var events: MapState[String, DataChangeEvent] = _
   @transient private var positions: MapState[String, Long] = _
-  /** Whole-transaction buffers of the previous layout; declared only to detect an old checkpoint. */
-  @transient private var legacyBuffers: MapState[String, TransactionState] = _
   @transient private var queue: MapState[Long, String] = _
   @transient private var cursor: ValueState[Cursor] = _
 
   override def init(outputMode: OutputMode, timeMode: TimeMode): Unit = {
     val handle = getHandle
-    txs = handle.getMapState("txs", Encoders.STRING, Encoders.bean(classOf[TransactionSummary]), TTLConfig.NONE)
+    txs = handle.getMapState("transactions", Encoders.STRING, Encoders.bean(classOf[TransactionSummary]), TTLConfig.NONE)
     events = handle.getMapState("events", Encoders.STRING, Encoders.bean(classOf[DataChangeEvent]), TTLConfig.NONE)
     positions = handle.getMapState("positions", Encoders.STRING, Encoders.scalaLong, TTLConfig.NONE)
-    legacyBuffers = handle.getMapState("buffers", Encoders.STRING, Encoders.bean(classOf[TransactionState]), TTLConfig.NONE)
     queue = handle.getMapState("queue", Encoders.scalaLong, Encoders.STRING, TTLConfig.NONE)
     cursor = handle.getValueState("cursor", Encoders.bean(classOf[Cursor]), TTLConfig.NONE)
   }
@@ -58,28 +56,15 @@ class TransactionOrderingProcessor(blockedAlertThresholdMs: Long, checkIntervalM
       run: TransactionSequencer => SequencerResult): Iterator[SequencerOutput] = {
     val now = timerValues.getCurrentProcessingTimeInMs()
     val store = new StateHandleStore
-    requireCurrentLayout(store)
-    val result = run(new TransactionSequencer(store, blockedAlertThresholdMs, () => now, summarizeReplays))
+    val result = run(new TransactionSequencer(store, trackedTables, blockedAlertThresholdMs, () => now, summarizeReplays))
 
     result.emitted.foreach(s =>
       TransactionOrderingProcessor.log.info(s"Emitting transaction ${s.xid}:${s.csn}. Progress: ${s.progress}"))
 
     rescheduleTimer(store.getCursor, store, now, expiredTimerMs)
-    result.emitted.iterator.flatMap(OrderJoiner.joinTransaction).map(SequencerOutput.ofOrder) ++
+    val processedTs = Instant.now().toString
+    result.emitted.iterator.map(s => SequencerOutput.ofTransaction(EmittedTransaction(s, processedTs))) ++
       result.dropped.iterator.map(SequencerOutput.ofDropped)
-  }
-
-  /**
-   * Spark accepts this processor's state variables on a checkpoint written by the previous
-   * layout, so detect one here: it has whole-transaction `buffers`, or a queued transaction with
-   * no summary. Running on would silently lose those buffered events.
-   */
-  private def requireCurrentLayout(store: StateHandleStore): Unit = {
-    val c = store.getCursor
-    val headWithoutSummary = c.queueDepth > 0 &&
-      store.queueGet(c.nextSeqToEmit).exists(key => store.getSummary(key).isEmpty)
-    if (legacyBuffers.keys().hasNext || headWithoutSummary)
-      throw new IllegalStateException(TransactionOrderingProcessor.LegacyLayoutMessage)
   }
 
   /** Keeps exactly one timer registered while the queue is non-empty, none otherwise. */
@@ -128,12 +113,6 @@ object TransactionOrderingProcessor {
 
   private val log: Logger = Logger(classOf[TransactionOrderingProcessor])
 
-  val LegacyLayoutMessage: String =
-    "This checkpoint was written by a version that buffered whole transactions (state variable " +
-      "`buffers`); this version stores each buffered event separately and can't use it. Start " +
-      "TransactionalCdcProcessingApp on a new job.output.checkpoint-location, as described in " +
-      "gg-configs/README.md, \"Migrating to per-event buffering state\"."
-
   /** Grouping key shared by every row: the sequencer needs a global view. */
   val GlobalKey = "all"
 
@@ -144,8 +123,8 @@ object TransactionOrderingProcessor {
    * Also sets the RocksDB state store provider, which transformWithState requires,
    * so it holds on the spark-submit path as well as the dev path.
    */
-  def orderTransactions(allEvents: Dataset[Row], blockedAlertThresholdMs: Long, checkIntervalMs: Long,
-      summarizeReplays: Boolean = false): Dataset[SequencerOutput] = {
+  def orderTransactions(allEvents: Dataset[Row], trackedTables: Seq[String], blockedAlertThresholdMs: Long,
+      checkIntervalMs: Long, summarizeReplays: Boolean = false): Dataset[SequencerOutput] = {
     allEvents.sparkSession.conf.set("spark.sql.streaming.stateStore.providerClass", RocksDbProvider)
 
     implicit val keyEncoder: Encoder[String] = Encoders.STRING
@@ -162,15 +141,14 @@ object TransactionOrderingProcessor {
     }
     grouped
       .transformWithState(
-        new TransactionOrderingProcessor(blockedAlertThresholdMs, checkIntervalMs, summarizeReplays),
+        new TransactionOrderingProcessor(trackedTables, blockedAlertThresholdMs, checkIntervalMs, summarizeReplays),
         TimeMode.ProcessingTime(),
         OutputMode.Append())
   }
 
-  /** The emitted order records of a sequencer output (streaming or batch). */
-  def ordersOf(output: Dataset[SequencerOutput]): Dataset[OrderStream] =
-    output.filter(col("kind") === SequencerOutput.OrderKind).select("order.*")
-      .as(Encoders.bean(classOf[OrderStream]))
+  /** The emitted transactions of a sequencer output (streaming or batch): xid, csn, processedTs, events. */
+  def transactionsOf(output: Dataset[SequencerOutput]): DataFrame =
+    output.filter(col("kind") === SequencerOutput.TransactionKind).select("transaction.*")
 
   /** The drop records of a sequencer output (streaming or batch). */
   def droppedOf(output: Dataset[SequencerOutput]): Dataset[DroppedEvent] =

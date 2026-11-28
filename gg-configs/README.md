@@ -104,22 +104,25 @@ as steps 2 to 5 take, usually seconds. Extract `ext04` keeps running.
    ggsci> START REPLICAT rep3
    ```
 6. Set the pipeline's starting offsets to the recorded end offsets (partition to offset), and
-   leave the metadata topic at `earliest`. In `transactional-cdc-processing.conf`:
+   leave the metadata topic at `earliest`. The offsets are keyed by entity name, as the job config
+   names its entities. In `jobs/orders.conf`:
    ```hocon
    job.kafka.starting-offsets {
      orders = """{"0":113}"""
-     order-details = """{"0":109}"""
-     order-line-items = """{"0":372}"""
+     orderDetails = """{"0":109}"""
+     lineItems = """{"0":372}"""
      transaction-metadata = "earliest"
    }
    ```
    The app logs each source's starting position at startup, and refuses to start if a value is
-   invalid.
-7. Start `TransactionalCdcProcessingApp` on a **new** `job.output.checkpoint-location`. Starting
-   offsets apply only to a new checkpoint; on an existing one, Spark resumes from its own offsets.
+   invalid or a key names no entity of the job.
+7. Start `TransactionalCdcProcessingApp` with `-Dconfig.file=jobs/orders.conf`, on a **new**
+   checkpoint (`job.output.stream.checkpoint`, by default `/tmp/spark-checkpoints/orders/stream`).
+   Starting offsets apply only to a new checkpoint; on an existing one, Spark resumes from its own
+   offsets.
 8. Verify: after the next source transaction commits, its row appears in `order_stream`, and the
    app logs no `has blocked emission` error. In the state store (see `docs/STATE-STORE-DEBUG.md`),
-   `seq_buffers` holds only in-flight transactions.
+   the `transactions` state variable holds only in-flight transactions.
 
 After the first start the offsets block is ignored. It can stay, or be removed.
 
@@ -156,21 +159,21 @@ The cost is a slower first start, and state that holds the history until the pur
    alter replicat rep3 extseqno <seqno> extrba <rba>
    start replicat rep3
    ```
-5. Deploy the new app with a **new checkpoint location** and
+5. Deploy the new app with a **new checkpoint** (`job.output.stream.checkpoint`) and
    `startingOffsets=earliest`. Optionally truncate `order_stream` and
    `orders_current` first; otherwise the replay adds duplicate history rows to
    `order_stream` (harmless for `orders_current`).
 6. Start `ScdType1MergeApp`, with a new checkpoint if `order_stream` was truncated.
 
-Rollback: redeploy the previous jar with its original checkpoint location. The
-replicat config changes are compatible with the old app.
+Rollback: redeploy the previous jar with its original checkpoint. The replicat config changes
+are compatible with the old app.
 
 ### Migrating to per-event buffering state
 
 The release that stores each buffered event separately (OpenSpec change
 `fix-large-transaction-buffering`) uses a different state layout for
-`TransactionalCdcProcessingApp`. It can't use a checkpoint written by an earlier release: on
-one, it fails at the first batch with a message naming this section. Only stage 1 is affected.
+`TransactionalCdcProcessingApp`. It can't use a checkpoint written by an earlier release, and
+doesn't detect one, so always start it on a new checkpoint. Only stage 1 is affected.
 `ScdType1MergeApp` keeps its checkpoint and can keep running.
 
 The steps below start stage 1 on a new checkpoint without writing any `order_stream` row
@@ -205,7 +208,8 @@ twice, except for the few transactions in the marker message it restarts from.
      done
      ```
 5. Set the starting offsets and a **new** checkpoint location, then start the new release. In
-   `transactional-cdc-processing.conf`:
+   `transactional-cdc-processing.conf` (the keys of that release; since configurable job models,
+   see the next section):
    ```hocon
    job.kafka.starting-offsets {
      transaction-metadata = """{"0":<offset from step 3>}"""
@@ -225,3 +229,48 @@ deployment" above. `order_stream` then gets duplicate history rows unless it is 
 Rollback: redeploy the previous release on its original checkpoint, which this migration leaves
 untouched. Transactions the new release already emitted are written to `order_stream` again,
 which is harmless for `orders_current`.
+
+### Migrating to configurable job models
+
+The release with configurable job models (OpenSpec change `configurable-cdc-models`) reads both
+stages' settings from one job config, `jobs/<job>.conf`, and counts events per tracked table of
+the job's model. Two things change for a running orders deployment:
+
+- **Stage 1 state.** `TransactionalCdcProcessingApp` keeps a different summary per buffered
+  transaction. It can't use a checkpoint of an earlier release and doesn't detect one, so stage 1
+  needs a new checkpoint.
+- **`dropped_events`.** Rows now carry `jobName`, and purged-buffer rows carry per-table counts in
+  `bufferedCounts`. The app refuses to start until the table has both columns.
+
+`order_stream` and `orders_current` are unchanged: `jobs/orders.conf` reproduces their schemas,
+and each stage checks its table's schema before starting.
+
+1. Stop `TransactionalCdcProcessingApp` and `ScdType1MergeApp`. Leave GoldenGate running.
+2. Add the new `dropped_events` columns: run `db/alter_dropped_events_add_job.sql`, with
+   `{{CATALOG_SCHEMA}}` replaced by the catalog schema (`mymanaged.argus1`).
+3. Optional: check that the orders job still describes the existing tables. The startup check does
+   this anyway; with the tool, `scripts/cdc-model.sh ddl jobs/orders.conf` must leave
+   `db/orders_stream.deltalake.sql` and `db/orders_current.deltalake.sql` unchanged (`git diff`).
+4. Choose stage 1's starting offsets as in steps 2 to 4 of "Migrating to per-event buffering state"
+   above, and set them with the entity-keyed names, in `jobs/orders.conf` or with `-D`:
+   ```hocon
+   job.kafka.starting-offsets {
+     transaction-metadata = """{"0":<offset of the first marker with CSN C or higher>}"""
+     orders = "earliest"            # or a JSON map of partition to offset
+     orderDetails = "earliest"
+     lineItems = "earliest"
+   }
+   ```
+5. Start `TransactionalCdcProcessingApp` with `-Dconfig.file=jobs/orders.conf` (or no
+   `config.file`: the orders job is bundled in the jar). Its checkpoint defaults to
+   `/tmp/spark-checkpoints/orders/stream`, which is new; set `job.output.stream.checkpoint` for
+   another path.
+6. Start `ScdType1MergeApp` with the same job config. To keep its progress, point it at its old
+   checkpoint: `-Djob.output.current.checkpoint=/tmp/spark-checkpoints-scd` (or wherever it was).
+   Use a new checkpoint (the default, `/tmp/spark-checkpoints/orders/current`) if `order_stream`
+   was truncated.
+7. Verify: new transactions appear in `order_stream` and `orders_current`, and new
+   `dropped_events` rows have `jobName = orders`.
+
+Rollback: redeploy the previous release with its original checkpoints, which this migration
+leaves untouched. The added `dropped_events` columns are ignored by the old code.

@@ -15,7 +15,7 @@ class TransactionStateTest {
     assertThat(s.addEvent(lineItem("x1", "100", "p100", 1))).isEqualTo(TransactionState.DuplicatePos)
     assertThat(s.addEvent(lineItem("x1", "100", "p101", 2))).isEqualTo(TransactionState.Added)
 
-    assertThat(s.orderLineItemEvents.size).isEqualTo(2)
+    assertThat(s.eventsOf("ORDER_LINE_ITEMS").size).isEqualTo(2)
     assertThat(s.isComplete).isFalse
 
     s.addEvent(lineItem("x1", "100", "p102", 3))
@@ -27,7 +27,7 @@ class TransactionStateTest {
     val s = state(marker("x1", "100", lineItems = 1))
 
     assertThat(s.addEvent(event("x1", "100", "CUSTOMERS", "p1"))).isEqualTo(TransactionState.UnknownTable)
-    assertThat(s.orderEvents.size + s.orderDetailEvents.size + s.orderLineItemEvents.size).isEqualTo(0)
+    assertThat(s.events.size).isEqualTo(0)
   }
 
   @Test
@@ -36,7 +36,7 @@ class TransactionStateTest {
       lineItem("x1", "100", "p100", 1, version = 1),
       lineItem("x1", "100", "p101", 1, version = 2))
 
-    assertThat(s.orderLineItemEvents.size).isEqualTo(2)
+    assertThat(s.eventsOf("ORDER_LINE_ITEMS").size).isEqualTo(2)
     assertThat(s.isComplete).isTrue
   }
 
@@ -69,7 +69,7 @@ class TransactionStateTest {
 
   @Test
   def noMarkerIsIncomplete(): Unit = {
-    val s = new TransactionState()
+    val s = new TransactionState(OrdersTables)
     s.addEvent(lineItem("x1", "100", "p1", 1))
 
     assertThat(s.isComplete).isFalse
@@ -84,5 +84,12 @@ class TransactionStateTest {
       before = Map("LINE_ITEM_ID" -> "2", "ORDER_ID" -> "1", "VERSION" -> "1")))
 
     assertThat(s.isComplete).isTrue
+  }
+
+  @Test
+  def eventsAreInTrackedTableOrderThenBufferedOrder(): Unit = {
+    val s = state(marker("x1", "100", orders = 1, lineItems = 2),
+      lineItem("x1", "100", "p1", 1), order("x1", "100", "p2"), lineItem("x1", "100", "p3", 2))
+    assertThat(s.events.map(_.pos).toArray).containsExactly("p2", "p1", "p3")
   }
 }

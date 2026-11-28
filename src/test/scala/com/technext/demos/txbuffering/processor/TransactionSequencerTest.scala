@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 
 import com.technext.demos.txbuffering.model.generic.{DroppedEvent, KafkaSource}
 import com.technext.demos.txbuffering.model.generic.DroppedEvent.{ItemKind, Reason}
+import com.technext.demos.txbuffering.model.generic.DataCollectionCount
 import com.technext.demos.txbuffering.processor.Fixtures._
 
 class TransactionSequencerTest {
@@ -14,7 +15,7 @@ class TransactionSequencerTest {
 
   private var nowMs = 0L
   private val store = new InMemorySequencerStore
-  private val seq = new TransactionSequencer(store, ThresholdMs, () => nowMs)
+  private val seq = new TransactionSequencer(store, OrdersTables, ThresholdMs, () => nowMs)
 
   private var nextOffset = 0L
 
@@ -102,7 +103,7 @@ class TransactionSequencerTest {
     val r = run(mk("a", "500", 1), mk("b", "500", 1), li("a", "500", "p1"), li("b", "500", "p2"))
 
     assertThat(keys(r).toArray).containsExactly("a:500", "b:500")
-    assertThat(r.emitted.map(_.orderLineItemEvents.size).toArray).containsExactly(1, 1)
+    assertThat(r.emitted.map(_.eventsOf("ORDER_LINE_ITEMS").size).toArray).containsExactly(1, 1)
   }
 
   @Test
@@ -198,7 +199,7 @@ class TransactionSequencerTest {
     assertThat(alert.isDefined).isTrue
     assertThat(alert.get.headTxKey).isEqualTo("t1:100")
     assertThat(alert.get.queuedBehind).isEqualTo(1L)
-    assertThat(alert.get.progress).isEqualTo("Orders: 0/0, Details: 0/0, LineItems: 1/2")
+    assertThat(alert.get.progress).isEqualTo("ORDERS: 0/0, ORDER_DETAILS: 0/0, ORDER_LINE_ITEMS: 1/2")
   }
 
   @Test
@@ -357,9 +358,9 @@ class TransactionSequencerTest {
     assertThat(d.reason).isEqualTo(Reason.NoMarkerBelowCursor)
     assertThat(d.xid).isEqualTo("h")
     assertThat(d.csn).isEqualTo("100")
-    assertThat(d.bufferedOrders).isEqualTo(1)
-    assertThat(d.bufferedDetails).isEqualTo(1)
-    assertThat(d.bufferedLineItems).isEqualTo(3)
+    assertThat(d.bufferedCounts.toArray.map(_.asInstanceOf[DataCollectionCount]).map(c => s"${c.dataCollection}=${c.eventCount}"))
+      .containsExactly("ORDERS=1", "ORDER_DETAILS=1", "ORDER_LINE_ITEMS=3")
+    assertThat(d.bufferedOrders).isNull()
     assertThat(d.lastEmittedCsn).isEqualTo("200")
   }
 
@@ -373,7 +374,7 @@ class TransactionSequencerTest {
 
   @Test
   def summaryModeFoldsReplaysOfOneTransaction(): Unit = {
-    val summarizing = new TransactionSequencer(store, ThresholdMs, () => nowMs, summarizeReplays = true)
+    val summarizing = new TransactionSequencer(store, OrdersTables, ThresholdMs, () => nowMs, summarizeReplays = true)
     summarizing.process(Iterator(mk("e", "500", 0)))
 
     val inputs = (1 to 350).map(i => li("a", "400", s"p$i")) ++
@@ -424,9 +425,9 @@ class TransactionSequencerTest {
       DataInput(order("a", "100", "p3", orderId = 2)), li("a", "100", "p4"), li("a", "100", "p5"), m)
 
     val emitted = r.emitted.head
-    assertThat(emitted.orderEvents.toArray.map(_.asInstanceOf[com.technext.demos.txbuffering.model.generic.DataChangeEvent].pos))
+    assertThat(emitted.eventsOf("ORDERS").map(_.pos).toArray)
       .containsExactly("p1", "p3")
-    assertThat(emitted.orderLineItemEvents.toArray.map(_.asInstanceOf[com.technext.demos.txbuffering.model.generic.DataChangeEvent].pos))
+    assertThat(emitted.eventsOf("ORDER_LINE_ITEMS").map(_.pos).toArray)
       .containsExactly("p2", "p4", "p5")
     assertThat(emitted.getMetadata.xid).isEqualTo("a")
     storeIsEmptyOf("a:100")
@@ -437,7 +438,7 @@ class TransactionSequencerTest {
     val r = run(mk("a", "100", 2), DataInput(lineItem("a", "100", null, 1)), DataInput(lineItem("a", "100", null, 2)))
 
     assertThat(keys(r).toArray).containsExactly("a:100")
-    assertThat(r.emitted.head.orderLineItemEvents.size).isEqualTo(2)
+    assertThat(r.emitted.head.eventsOf("ORDER_LINE_ITEMS").size).isEqualTo(2)
     assertThat(r.dropped.isEmpty).isTrue
     storeIsEmptyOf("a:100")
   }
@@ -479,9 +480,9 @@ class TransactionSequencerTest {
         assertThat(store.count("getEvent")).isEqualTo(0L)
       } else {
         val emitted = r.emitted.head
-        assertThat(emitted.orderLineItemEvents.size).isEqualTo(n)
-        assertThat(emitted.orderLineItemEvents.get(0).pos).isEqualTo("p0")
-        assertThat(emitted.orderLineItemEvents.get(n - 1).pos).isEqualTo(s"p${n - 1}")
+        assertThat(emitted.eventsOf("ORDER_LINE_ITEMS").size).isEqualTo(n)
+        assertThat(emitted.eventsOf("ORDER_LINE_ITEMS").head.pos).isEqualTo("p0")
+        assertThat(emitted.eventsOf("ORDER_LINE_ITEMS")(n - 1).pos).isEqualTo(s"p${n - 1}")
       }
     }
     val steps = batches.size.toLong
@@ -529,7 +530,37 @@ class TransactionSequencerTest {
     val r = seq.onTimer()
 
     assertThat(r.emitted.isEmpty).isTrue
-    assertThat(r.alert.get.progress).isEqualTo("Orders: 0/0, Details: 0/0, LineItems: 50000/55000")
+    assertThat(r.alert.get.progress).isEqualTo("ORDERS: 0/0, ORDER_DETAILS: 0/0, ORDER_LINE_ITEMS: 50000/55000")
     assertThat(store.count("getEvent")).isEqualTo(0L)
+  }
+
+  // ---- tracked tables (job models) ----
+
+  @Test
+  def markerCountsForTablesOfAnotherJobAreIgnored(): Unit = {
+    val m = new com.technext.demos.txbuffering.model.generic.TransactionMetadata()
+    m.xid = "a"
+    m.csn = "100"
+    m.eventCount = 4
+    m.dataCollections = java.util.List.of(new DataCollectionCount("ORDERS", 1), new DataCollectionCount("CUSTOMERS", 3))
+    val r = run(MarkerInput(m, 0, 1L), DataInput(order("a", "100", "p1")))
+    assertThat(keys(r).toArray).containsExactly("a:100")
+  }
+
+  @Test
+  def singleTableModelCompletesOnItsOwnCounts(): Unit = {
+    val customers = new TransactionSequencer(new InMemorySequencerStore, Seq("CUSTOMERS"), ThresholdMs, () => nowMs)
+    val m = new com.technext.demos.txbuffering.model.generic.TransactionMetadata()
+    m.xid = "c"
+    m.csn = "100"
+    m.eventCount = 2
+    m.dataCollections = java.util.List.of(new DataCollectionCount("CUSTOMERS", 2))
+    val first = customers.process(Iterator(MarkerInput(m, 0, 1L), DataInput(event("c", "100", "CUSTOMERS", "p1"))))
+    assertThat(first.emitted.isEmpty).isTrue
+    val second = customers.process(Iterator(DataInput(event("c", "100", "CUSTOMERS", "p2")),
+      DataInput(order("c", "100", "p3"))))
+    assertThat(second.emitted.map(_.eventsOf("CUSTOMERS").size).toArray).containsExactly(2)
+    // ORDERS isn't tracked by this job
+    assertThat(second.dropped.map(_.reason).toArray).containsExactly(Reason.UnknownTable)
   }
 }

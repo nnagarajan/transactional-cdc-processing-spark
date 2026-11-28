@@ -9,6 +9,9 @@ import com.technext.demos.txbuffering.model.generic.{DataChangeEvent, DataCollec
 /** Builders for CDC events and markers used across processor tests. */
 object Fixtures {
 
+  /** Tracked tables of the orders job. */
+  val OrdersTables: Seq[String] = Seq("ORDERS", "ORDER_DETAILS", "ORDER_LINE_ITEMS")
+
   def marker(xid: String, csn: String, orders: Int = 0, details: Int = 0, lineItems: Int = 0): TransactionMetadata = {
     val m = new TransactionMetadata()
     m.xid = xid
@@ -48,7 +51,7 @@ object Fixtures {
     event(xid, csn, "ORDERS", pos, after = Map("ORDER_ID" -> orderId.toString, "VERSION" -> version.toString))
 
   def state(m: TransactionMetadata, events: DataChangeEvent*): TransactionState = {
-    val s = new TransactionState()
+    val s = new TransactionState(OrdersTables)
     s.xid = m.xid
     s.csn = m.csn
     s.setMetadata(m)

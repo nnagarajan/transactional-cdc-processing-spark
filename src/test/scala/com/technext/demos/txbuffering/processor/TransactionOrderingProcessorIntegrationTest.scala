@@ -12,7 +12,6 @@ import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.{AfterAll, BeforeAll, BeforeEach, Test, TestInstance}
 
-import com.technext.demos.txbuffering.model.order.OrderStream
 
 /** Same column layout as the unioned CDC stream built by TransactionalCdcProcessingApp. */
 case class TestDataCollection(data_collection: String, event_count: Int)
@@ -36,7 +35,7 @@ case class TestCdcRow(
 /** Output collected per micro-batch, in batch order: (batchId, xid:csn of each emitted row). */
 object CollectedBatches {
   val batches = new ConcurrentLinkedQueue[(Long, Seq[String])]()
-  /** Each emitted order record: (xid:csn, number of line items it holds). */
+  /** Each emitted transaction: (xid:csn, number of line-item events it holds). */
   val lineItemCounts = new ConcurrentLinkedQueue[(String, Int)]()
 }
 
@@ -90,12 +89,15 @@ class TransactionOrderingProcessorIntegrationTest {
   }
 
   private def start(input: MemoryStream[TestCdcRow], checkpoint: String): StreamingQuery = {
-    val ordered = TransactionOrderingProcessor.ordersOf(
-      TransactionOrderingProcessor.orderTransactions(input.toDF(), 10 * 60 * 1000L, 60 * 1000L))
-    val collect: (Dataset[OrderStream], Long) => Unit = (ds, batchId) => {
+    val ordered = TransactionOrderingProcessor.orderTransactions(input.toDF(),
+      com.technext.demos.txbuffering.model.spec.TestModels.ordersModel.trackedTables, 10 * 60 * 1000L, 60 * 1000L)
+      .filter(org.apache.spark.sql.functions.col("kind") === SequencerOutput.TransactionKind)
+      .select("transaction.*").as(Encoders.bean(classOf[EmittedTransaction]))
+    val collect: (Dataset[EmittedTransaction], Long) => Unit = (ds, batchId) => {
       val orders = ds.collect().toSeq
       val keys = orders.map(o => s"${o.xid}:${o.csn}")
-      orders.foreach(o => CollectedBatches.lineItemCounts.add((s"${o.xid}:${o.csn}", o.lineItems.size)))
+      orders.foreach(o => CollectedBatches.lineItemCounts.add((s"${o.xid}:${o.csn}",
+        o.events.asScala.count(_.tableName == "ORDER_LINE_ITEMS"))))
       if (keys.nonEmpty) CollectedBatches.batches.add((batchId, keys))
     }
     ordered.writeStream

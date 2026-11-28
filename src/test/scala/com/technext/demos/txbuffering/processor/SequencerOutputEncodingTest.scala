@@ -15,7 +15,7 @@ class SequencerOutputEncodingTest {
     "kafkaTopic", "kafkaPartition", "kafkaOffset", "markerIndex",
     "tableName", "opType", "opTs", "pos", "before", "after",
     "markerEventCount", "markerTxTs", "dataCollections",
-    "bufferedOrders", "bufferedDetails", "bufferedLineItems", "rawValue")
+    "bufferedCounts", "bufferedOrders", "bufferedDetails", "bufferedLineItems", "rawValue", "jobName")
 
   @Test
   def droppedEventBeanMatchesTheTableColumns(): Unit = {
@@ -28,8 +28,9 @@ class SequencerOutputEncodingTest {
   @Test
   def envelopeHasBothSides(): Unit = {
     val schema = Encoders.bean(classOf[SequencerOutput]).schema
-    assertThat(schema.fieldNames.sorted.toArray).containsExactly("dropped", "kind", "order")
-    assertThat(schema("order").dataType.isInstanceOf[StructType]).isTrue
+    assertThat(schema.fieldNames.sorted.toArray).containsExactly("dropped", "kind", "transaction")
+    assertThat(schema("transaction").dataType.asInstanceOf[StructType].fieldNames.sorted.toArray)
+      .containsExactly("csn", "events", "processedTs", "xid")
     assertThat(schema("dropped").dataType.isInstanceOf[StructType]).isTrue
   }
 }

@@ -33,35 +33,32 @@ Or using Maven wrapper:
 
 ## Running
 
-### Local Mode
+Both apps run one job, described by `jobs/<job>.conf` and passed with `-Dconfig.file`. Without it
+they run the bundled orders job ([jobs/orders.conf](jobs/orders.conf)). To define another job, see
+[docs/ADDING-A-JOB.md](docs/ADDING-A-JOB.md).
 
 ```bash
 spark-submit \
   --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
-  --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
+  --master 'local[2]' \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0,com.typesafe:config:1.4.3,org.apache.logging.log4j:log4j-api-scala_2.13:13.1.0 \
+  --driver-java-options "-Dconfig.file=jobs/orders.conf" \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
-  localhost:9092 \
-  /tmp/spark-checkpoints \
-  /tmp/delta-tables/order_stream
+  --conf spark.sql.catalog.mymanaged=io.unitycatalog.spark.UCSingleCatalog \
+  --conf spark.sql.catalog.mymanaged.uri=http://localhost:7071 \
+  --conf spark.sql.catalog.mymanaged.auth.type=static \
+  --conf spark.sql.catalog.mymanaged.auth.token=dummy \
+  --conf spark.sql.defaultCatalog=mymanaged \
+  target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar
 ```
 
-### With SPARK_HOME
+Run `ScdType1MergeApp` the same way with `--class com.technext.demos.txbuffering.ScdType1MergeApp`.
+Any setting can be overridden with `-D` in `--driver-java-options`, for example
+`-Djob.kafka.bootstrap-servers=host:9092`.
 
-```bash
-$SPARK_HOME/bin/spark-submit \
-  --class com.technext.demos.txbuffering.TransactionalCdcProcessingApp \
-  --master local[2] \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_4.1_2.13:4.2.0 \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  target/transactional-cdc-processing-spark-1.0.0-SNAPSHOT.jar \
-  localhost:9092 \
-  /tmp/spark-checkpoints \
-  /tmp/delta-tables/order_stream
-```
+The tables must exist first: `db/orders_stream.deltalake.sql` and `db/orders_current.deltalake.sql`
+are written from the job config by `scripts/cdc-model.sh ddl jobs/orders.conf` and run by `SeedJob`.
 
 ## Input Topics
 
@@ -256,6 +253,7 @@ Reports are written to `target/e2e-reports/<suite>-<runId>/` (`summary.md`, `tra
 - **[IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed architecture, configuration options, and troubleshooting guide
 - **[SCD_TYPE1_README.md](docs/SCD_TYPE1_README.md)** - SCD Type 1 merge application documentation
 - **[oracle-schema.md](docs/oracle-schema.md)** - Oracle source table schema definitions
+- **[ADDING-A-JOB.md](docs/ADDING-A-JOB.md)** - Defining a new CDC job in `jobs/<job>.conf`: tables, topics, column mapping, keys (compound ones too), DDL, hand-written transforms
 - **[E2E-TESTING.md](docs/E2E-TESTING.md)** - End-to-end suites against the running stack: correctness and ordering, performance, per-order commit latency (`./mvnw -Pe2e verify`)
 
 ## SCD Type 1 Maintenance

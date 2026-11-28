@@ -10,42 +10,45 @@ package com.technext.demos.txbuffering
 import com.typesafe.config.Config
 import org.apache.logging.log4j.scala.Logging
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.{OutputMode, Trigger}
 
+import com.technext.demos.txbuffering.model.spec.{JobModel, ModelResolver, Schemas}
 import com.technext.demos.txbuffering.processor.{SequencerOutput, TransactionOrderingProcessor}
 
 /**
- * Spark Structured Streaming application for transactionally consistent CDC processing.
+ * Stage 1 of a CDC job: Spark Structured Streaming application for transactionally consistent CDC
+ * processing.
  *
- * Buffers CDC events from orders, order_details, and order_line_items topics,
- * uses transaction metadata to determine when all events in a transaction have arrived,
- * and emits denormalized records only when transactions are complete, strictly in the
- * order their markers appear on the single-partition transaction metadata topic (commit order).
+ * Reads one Kafka topic per entity of the job's model plus the shared transaction metadata topic,
+ * buffers the events of each transaction until the marker's counts for every tracked table are
+ * met, and emits transactions strictly in the order their markers appear on the single-partition
+ * metadata topic (commit order). Each batch's transactions are shaped into the model's stream
+ * records and appended to its stream table.
+ *
+ * Run with -Dconfig.file=jobs/<job>.conf (the bundled orders job without it).
  */
 object TransactionalCdcProcessingApp extends App with Logging {
 
-  val config: Config = AppConfig.load("transactional-cdc-processing")
+  val config: Config = AppConfig.loadJob()
+  val model: JobModel = ModelResolver.load(config)
 
   val kafkaBootstrapServers = config.getString("job.kafka.bootstrap-servers")
-  val checkpointLocation = config.getString("job.output.checkpoint-location")
-  val deltaTableName = config.getString("job.output.delta-table-name")
+  val checkpointLocation = model.streamCheckpoint
   val blockedAlertThresholdMs = config.getDuration("job.ordering.blocked-alert-threshold").toMillis
   val checkIntervalMs = config.getDuration("job.ordering.check-interval").toMillis
   val triggerIntervalMs = config.getDuration("job.ordering.trigger-interval").toMillis
 
-  logger.info("Starting Transactional CDC Processing Application")
+  logger.info(s"Starting Transactional CDC Processing Application, job ${model.name}")
   logger.info(s"Kafka Bootstrap Servers: $kafkaBootstrapServers")
   logger.info(s"Checkpoint Location: $checkpointLocation")
-  logger.info(s"Delta Table: $deltaTableName")
+  logger.info(s"Stream table: ${model.streamTable}")
+  logger.info(s"Tracked tables: ${model.trackedTables.mkString(", ")}")
   logger.info(s"Blocked-transaction alert threshold: ${blockedAlertThresholdMs}ms, check interval: ${checkIntervalMs}ms, trigger interval: ${triggerIntervalMs}ms")
 
-  // Per-topic starting positions (new checkpoint only) and per-batch limits; validated before any query starts
-  val sourceOptions: Map[String, KafkaSourceOptions.SourceOptions] =
-    Seq("orders", "order-details", "order-line-items", "transaction-metadata")
-      .map(k => k -> KafkaSourceOptions.forTopic(config, k)).toMap
-  sourceOptions.foreach { case (k, o) =>
-    logger.info(s"Kafka source '$k' (${config.getString(s"job.kafka.topics.$k")}): startingOffsets=${o.startingOffsets}, " +
+  // Per-source starting positions (new checkpoint only) and per-batch limits; validated before any query starts
+  val sources: Seq[(String, String, KafkaSourceOptions.SourceOptions)] = KafkaSourceOptions.forJob(config, model)
+  sources.foreach { case (key, topic, o) =>
+    logger.info(s"Kafka source '$key' ($topic): startingOffsets=${o.startingOffsets}, " +
       s"maxOffsetsPerTrigger=${o.maxOffsetsPerTrigger.map(_.toString).getOrElse("none")}")
   }
 
@@ -55,36 +58,27 @@ object TransactionalCdcProcessingApp extends App with Logging {
 
   val spark = SparkSessionCreator.getSpark(config)
   spark.sparkContext.setLogLevel(config.getString("spark.log-level"))
+  CdcOutputSink.requireTableSchema(spark, model.streamTable, Schemas.streamSchema(model), model.name)
   CdcOutputSink.checkDroppedEventsTable(spark, droppedEvents)
 
-  // Read all CDC streams with proper JSON parsing
-  val ordersRaw = readKafkaStream(spark, config, "orders")
-  val orderDetailsRaw = readKafkaStream(spark, config, "order-details")
-  val orderLineItemsRaw = readKafkaStream(spark, config, "order-line-items")
-  val txMetadataRaw = readKafkaStream(spark, config, "transaction-metadata")
-
-  // Parse JSON and add event type markers
-  val orderEvents = CdcJsonParsing.parseDataChangeEvents(ordersRaw, "ORDERS")
-  val orderDetailEvents = CdcJsonParsing.parseDataChangeEvents(orderDetailsRaw, "ORDER_DETAILS")
-  val orderLineItemEvents = CdcJsonParsing.parseDataChangeEvents(orderLineItemsRaw, "ORDER_LINE_ITEMS")
-  val txMetadataEvents = CdcJsonParsing.parseTransactionMetadata(txMetadataRaw)
-
-  // Union all streams. Messages without xid/csn are not filtered here: the parser marks them
-  // RAW_DROP and the sequencer records them as dropped.
-  val allEvents = orderEvents
-    .union(orderDetailEvents)
-    .union(orderLineItemEvents)
-    .union(txMetadataEvents)
+  // One parsed stream per entity, tagged with its table, plus the markers. Messages without
+  // xid/csn are not filtered here: the parser marks them RAW_DROP and the sequencer records them
+  // as dropped.
+  val entityEvents: Seq[Dataset[Row]] = model.entities.map { e =>
+    CdcJsonParsing.parseDataChangeEvents(readKafkaStream(spark, e.name), e.table)
+  }
+  val txMetadataEvents = CdcJsonParsing.parseTransactionMetadata(readKafkaStream(spark, ModelResolver.MetadataSourceKey))
+  val allEvents = (entityEvents :+ txMetadataEvents).reduce(_ union _)
 
   // Assemble transactions and emit them in commit order (single global sequencer). The output
-  // holds the emitted orders and a record of every dropped input.
+  // holds the emitted transactions and a record of every dropped input.
   val output: Dataset[SequencerOutput] = TransactionOrderingProcessor.orderTransactions(
-    allEvents, blockedAlertThresholdMs, checkIntervalMs, droppedEvents.summarizeReplays)
+    allEvents, model.trackedTables, blockedAlertThresholdMs, checkIntervalMs, droppedEvents.summarizeReplays)
 
-  // Write orders, then drop records, per micro-batch; both writes are idempotent per batch id.
+  // Write stream records, then drop records, per micro-batch; both writes are idempotent per batch id.
   // The txnAppId prefix is the query id from the checkpoint, read once the query has started.
   @volatile private var txnAppIdPrefix: String = _
-  val sink = new CdcOutputSink(deltaTableName, droppedEvents, () => {
+  val sink = new CdcOutputSink(model, droppedEvents, () => {
     if (txnAppIdPrefix == null) txnAppIdPrefix = CdcOutputSink.queryIdFromCheckpoint(spark, checkpointLocation)
     txnAppIdPrefix
   })
@@ -101,17 +95,19 @@ object TransactionalCdcProcessingApp extends App with Logging {
     .foreachBatch(writeBatch)
     .start()
 
-  logger.info(s"Streaming query started. Writing to Delta Lake table: $deltaTableName" +
+  logger.info(s"Streaming query started. Writing to Delta Lake table: ${model.streamTable}" +
     (if (droppedEvents.enabled) s", dropped events to ${droppedEvents.tableName}" else " (dropped events: log only)"))
   logger.info("Waiting for data...")
   query.awaitTermination()
 
-  private def readKafkaStream(spark: SparkSession, config: Config, topicKey: String): Dataset[Row] =
+  private def readKafkaStream(spark: SparkSession, sourceKey: String): Dataset[Row] = {
+    val (_, topic, options) = sources.find(_._1 == sourceKey).get
     spark.readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", config.getString("job.kafka.bootstrap-servers"))
-      .option("subscribe", config.getString(s"job.kafka.topics.$topicKey"))
-      .options(sourceOptions(topicKey).asMap)
+      .option("kafka.bootstrap.servers", kafkaBootstrapServers)
+      .option("subscribe", topic)
+      .options(options.asMap)
       .option("failOnDataLoss", config.getString("kafka.fail-on-data-loss"))
       .load()
+  }
 }

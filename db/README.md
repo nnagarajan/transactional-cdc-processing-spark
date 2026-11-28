@@ -6,9 +6,7 @@ This directory contains SQL scripts for managing the Delta Lake tables used by t
 
 ### order_stream (SCD Type 2)
 
-Denormalized order records with nested arrays for orders, order details, and line items — created from transactionally consistent CDC event processing.
-
-**Location**: Configurable via application parameter (e.g., `/tmp/delta-tables/order_stream`)
+Denormalized order records with nested arrays for orders, order details, and line items — created from transactionally consistent CDC event processing. Its schema follows the orders job config, `jobs/orders.conf`; Unity Catalog chooses its storage location.
 
 **Schema**:
 - `orderId` (DOUBLE) - Primary order identifier
@@ -32,9 +30,9 @@ Current state table with flattened order attributes, single orderDetails struct 
 
 ## Scripts
 
-- **create_table.deltalake.sql** - Creates the order_stream Delta Lake table
-- **create_scd1_table.deltalake.sql** - Creates the orders_current (SCD Type 1) table
-- **create_dropped_events_table.deltalake.sql** - Creates the dropped_events audit table (one row per discarded input, with the reason). It has no `DROP TABLE`, so re-seeding keeps the audit history
+- **orders_stream.deltalake.sql**, **orders_current.deltalake.sql** - Create the orders job's order_stream and orders_current tables. Written from `jobs/orders.conf` by `scripts/cdc-model.sh ddl jobs/orders.conf`; don't edit them by hand. Every job gets a `<job>_stream` and `<job>_current` script the same way ([docs/ADDING-A-JOB.md](../docs/ADDING-A-JOB.md)), and each stage refuses to start if its table doesn't match its job config
+- **create_dropped_events_table.deltalake.sql** - Creates the dropped_events audit table (one row per discarded input, with the job and the reason), shared by every job. It has no `DROP TABLE`, so re-seeding keeps the audit history. SeedJob runs it first: scripts run in file-name order
+- **alter_dropped_events_add_job.sql** - Adds `jobName` and `bufferedCounts` to a dropped_events table created before configurable job models. Run it once by hand (it is not a `*.deltalake.sql`, so SeedJob skips it); see "Migrating to configurable job models" in [gg-configs/README.md](../gg-configs/README.md)
 - **truncate_tables.sql** - Empties order_stream, orders_current and dropped_events (`DELETE FROM`, definitions kept). Use it through `scripts/reset-pipeline.sh`, which also deletes both checkpoints so the pipeline reprocesses from the start
 - **query_table.sql** - Sample queries for the SCD Type 2 table
 - **query_scd1_table.sql** - Sample queries for the SCD Type 1 table
@@ -54,7 +52,7 @@ spark-sql \
   --packages io.delta:delta-spark_4.1_2.13:4.2.0 \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  -f db/create_table.deltalake.sql
+  -f db/orders_stream.deltalake.sql
 ```
 
 ### Using PySpark
@@ -68,20 +66,9 @@ spark = SparkSession.builder \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
     .getOrCreate()
 
-spark.sql(open('db/create_table.deltalake.sql').read())
+spark.sql(open('db/orders_stream.deltalake.sql').read())
 ```
 
-### Using spark-submit
+### Using SeedJob
 
-The application automatically creates the Delta Lake table on first write. These scripts are provided for manual table management and querying.
-
-## Table Location
-
-The default table location can be customized via the application's third argument:
-
-```bash
-spark-submit ... \
-  localhost:9092 \
-  /tmp/spark-checkpoints \
-  /path/to/delta-tables/order_stream
-```
+`SeedJob` runs every `*.deltalake.sql` script in `db/`, in file-name order, with `{{CATALOG_SCHEMA}}` replaced by `job.catalog-schema` (default `mymanaged.argus1`). The applications never create or alter the stream and current tables: create them with these scripts first.

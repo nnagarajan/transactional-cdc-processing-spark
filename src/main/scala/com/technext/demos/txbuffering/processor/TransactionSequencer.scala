@@ -58,8 +58,10 @@ final case class SequencerResult(emitted: Seq[TransactionState], alert: Option[B
  *  - A marker or data event is a replay, and is dropped, if its CSN is below C, or equal to C
  *    with an xid already emitted at C.
  *  - A marker for a transaction that already has one is a duplicate and is dropped.
- *  - Accepted markers are queued in Kafka offset order; data events go into their
- *    transaction's buffer, deduplicated on `pos` per table.
+ *  - Accepted markers are queued in Kafka offset order; data events of the tracked tables (the
+ *    job model's source tables, named without schema) go into their transaction's buffer,
+ *    deduplicated on `pos` per table. Events of other tables are dropped as UNKNOWN_TABLE, and a
+ *    marker's counts for other tables are ignored.
  *  - A buffered transaction is a [[TransactionSummary]] plus one state entry per event, so
  *    accepting an event, checking completeness and detecting a duplicate cost the same whatever
  *    the transaction's size. Each event is written once and read once, on emission or removal.
@@ -69,8 +71,10 @@ final case class SequencerResult(emitted: Seq[TransactionState], alert: Option[B
  *    transaction never has a CSN below C), and any marker for them would now be dropped as a replay.
  *    This clears data that never gets a marker, such as history from before markers existed.
  */
-class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long, clock: () => Long,
-    summarizeReplays: Boolean = false) extends Logging {
+class TransactionSequencer(store: SequencerStore, trackedTables: Seq[String], blockedAlertThresholdMs: Long,
+    clock: () => Long, summarizeReplays: Boolean = false) extends Logging {
+
+  private val tracked: Set[String] = trackedTables.toSet
 
   /** Applies a micro-batch of inputs, then emits whatever has become emittable. */
   def process(inputs: Iterator[SequencerInput]): SequencerResult = {
@@ -131,7 +135,7 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     }
 
     val summary = existing.getOrElse(TransactionSummary(md.xid, md.csn))
-    summary.setMetadata(md)
+    summary.acceptMarker(md, trackedTables)
     store.putSummary(key, summary)
     store.queuePut(cursor.nextSeqToAssign, key)
     cursor.nextSeqToAssign += 1
@@ -146,7 +150,7 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     }
     val key = TransactionSequencer.txKey(e.xid, e.csn)
     val table = e.tableName
-    if (!TransactionCompletion.isTracked(table)) {
+    if (!tracked.contains(table)) {
       logger.debug(s"Ignoring event pos=${e.pos} for $key: table ${e.table} is not tracked")
       dropped += DroppedEvent.ofEvent(e, Reason.UnknownTable, cursor.lastEmittedCsn, d.source)
     } else if (e.pos != null && store.positionExists(key, table, e.pos)) {
@@ -172,8 +176,8 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
       val summary = store.getSummary(key).getOrElse(
         throw new IllegalStateException(s"Queued transaction $key has no buffer"))
 
-      if (summary.isComplete) {
-        val state = new TransactionState()
+      if (summary.isComplete(trackedTables)) {
+        val state = new TransactionState(trackedTables)
         state.xid = summary.xid
         state.csn = summary.csn
         state.setMetadata(summary.getMetadata)
@@ -201,8 +205,8 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     if (toRemove.nonEmpty) {
       toRemove.foreach { key =>
         store.getSummary(key).foreach { s =>
-          dropped += DroppedEvent.ofPurgedBuffer(s.xid, s.csn, s.receivedOrders, s.receivedOrderDetails,
-            s.receivedOrderLineItems, bound)
+          dropped += DroppedEvent.ofPurgedBuffer(s.xid, s.csn,
+            TransactionCompletion.counts(s.received, trackedTables), bound)
           removeTransaction(key, s)(_ => ())
         }
       }
@@ -240,7 +244,7 @@ class TransactionSequencer(store: SequencerStore, blockedAlertThresholdMs: Long,
     if (blockedFor <= blockedAlertThresholdMs) return None
 
     val headKey = store.queueGet(cursor.nextSeqToEmit).get
-    val progress = store.getSummary(headKey).map(_.progress).getOrElse("unknown")
+    val progress = store.getSummary(headKey).map(_.progress(trackedTables)).getOrElse("unknown")
     val alert = BlockedAlert(headKey, progress, cursor.queueDepth - 1, blockedFor)
     logger.error(s"Transaction $headKey has blocked emission for ${blockedFor / 1000}s; " +
       s"${alert.queuedBehind} transaction(s) queued behind it. Progress: $progress")

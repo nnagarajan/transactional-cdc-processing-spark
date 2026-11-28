@@ -10,6 +10,7 @@ package com.technext.demos.txbuffering.model.generic
 import java.{lang => jl, util => ju}
 
 import scala.beans.BeanProperty
+import scala.jdk.CollectionConverters._
 
 /**
  * One input the pipeline discarded, with the reason. Mirrors the `dropped_events` table
@@ -43,9 +44,15 @@ class DroppedEvent extends Serializable {
   @BeanProperty var markerTxTs: String = _
   @BeanProperty var dataCollections: ju.List[DataCollectionCount] = _
 
+  /** Events buffered per tracked table when an unmarked buffer was removed (PURGED_BUFFER). */
+  @BeanProperty var bufferedCounts: ju.List[DataCollectionCount] = _
+  /** Legacy orders-only counts; kept in the table for old rows, no longer written. */
   @BeanProperty var bufferedOrders: jl.Integer = _
   @BeanProperty var bufferedDetails: jl.Integer = _
   @BeanProperty var bufferedLineItems: jl.Integer = _
+
+  /** The job that dropped the item; set by the sink, so several jobs can share the table. */
+  @BeanProperty var jobName: String = _
 
   @BeanProperty var rawValue: String = _
 }
@@ -106,11 +113,11 @@ object DroppedEvent {
   }
 
   /** A buffered transaction without a marker, removed by the purge. */
-  def ofPurgedBuffer(xid: String, csn: String, orders: Int, details: Int, lineItems: Int, lastEmittedCsn: String): DroppedEvent = {
+  /** One row for a removed unmarked buffer, with its event count per tracked table (in tracked order). */
+  def ofPurgedBuffer(xid: String, csn: String, counts: Seq[(String, Int)], lastEmittedCsn: String): DroppedEvent = {
     val d = base(ItemKind.PurgedBuffer, Reason.NoMarkerBelowCursor, lastEmittedCsn, xid, csn)
-    d.bufferedOrders = orders
-    d.bufferedDetails = details
-    d.bufferedLineItems = lineItems
+    d.bufferedCounts = new ju.ArrayList[DataCollectionCount](
+      counts.map { case (table, n) => new DataCollectionCount(table, n) }.asJava)
     d
   }
 

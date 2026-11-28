@@ -38,16 +38,20 @@ CREATE TABLE IF NOT EXISTS {{CATALOG_SCHEMA}}.dropped_events (
     dataCollections ARRAY<STRUCT<dataCollection: STRING, eventCount: INT>> COMMENT 'Per-table counts declared by the marker',
 
     -- PURGED_BUFFER
-    bufferedOrders INT COMMENT 'ORDERS events buffered when the buffer was removed',
-    bufferedDetails INT COMMENT 'ORDER_DETAILS events buffered when the buffer was removed',
-    bufferedLineItems INT COMMENT 'ORDER_LINE_ITEMS events buffered when the buffer was removed',
+    bufferedOrders INT COMMENT 'Legacy, no longer written: ORDERS events buffered when the buffer was removed',
+    bufferedDetails INT COMMENT 'Legacy, no longer written: ORDER_DETAILS events buffered when the buffer was removed',
+    bufferedLineItems INT COMMENT 'Legacy, no longer written: ORDER_LINE_ITEMS events buffered when the buffer was removed',
 
     -- RAW_MESSAGE
-    rawValue STRING COMMENT 'Kafka message value that could not be used'
+    rawValue STRING COMMENT 'Kafka message value that could not be used',
+
+    -- Added with configurable job models (db/alter_dropped_events_add_job.sql)
+    jobName STRING COMMENT 'Job that dropped the item (jobs/<job>.conf job.name)',
+    bufferedCounts ARRAY<STRUCT<dataCollection: STRING, eventCount: INT>> COMMENT 'PURGED_BUFFER: events buffered per tracked table when the buffer was removed'
 )
 USING DELTA
 PARTITIONED BY (droppedDate)
-COMMENT 'Inputs discarded by TransactionalCdcProcessingApp, with the reason'
+COMMENT 'Inputs discarded by TransactionalCdcProcessingApp, with the job and the reason'
 TBLPROPERTIES (
     'delta.feature.catalogManaged' = 'supported',
     'delta.logRetentionDuration' = 'interval 30 days',

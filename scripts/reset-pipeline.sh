@@ -8,8 +8,10 @@
 # Usage: scripts/reset-pipeline.sh [--yes]
 #
 # Overridable with environment variables:
-#   CDC_CHECKPOINT  checkpoint of TransactionalCdcProcessingApp (default /tmp/spark-checkpoints-ordered)
-#   SCD_CHECKPOINT  checkpoint of ScdType1MergeApp            (default /tmp/spark-checkpoints-scd)
+#   CDC_CHECKPOINT  checkpoint of TransactionalCdcProcessingApp (default /tmp/spark-checkpoints/orders/stream,
+#                   job.output.stream.checkpoint of jobs/orders.conf)
+#   SCD_CHECKPOINT  checkpoint of ScdType1MergeApp            (default /tmp/spark-checkpoints/orders/current,
+#                   job.output.current.checkpoint of jobs/orders.conf)
 #   UC_URI          Unity Catalog server                      (default http://localhost:7071)
 #
 # After the reset, start TransactionalCdcProcessingApp first, then ScdType1MergeApp. With a new
@@ -19,8 +21,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CDC_CHECKPOINT="${CDC_CHECKPOINT:-/tmp/spark-checkpoints-ordered}"
-SCD_CHECKPOINT="${SCD_CHECKPOINT:-/tmp/spark-checkpoints-scd}"
+CDC_CHECKPOINT="${CDC_CHECKPOINT:-/tmp/spark-checkpoints/orders/stream}"
+SCD_CHECKPOINT="${SCD_CHECKPOINT:-/tmp/spark-checkpoints/orders/current}"
 UC_URI="${UC_URI:-http://localhost:7071}"
 PACKAGES="io.delta:delta-spark_4.1_2.13:4.2.0,io.unitycatalog:unitycatalog-spark_4.1_2.13:0.5.0"
 
